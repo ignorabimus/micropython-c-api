@@ -44,7 +44,7 @@ mp_int_t call_add1(mp_int_t n)
 	} else {
 		handle_uncaught_exception((mp_obj_t)nlr.ret_val);
 
-		return false;
+		return 0;
 	}
 
 	return ret;
@@ -65,7 +65,7 @@ int main(void) {
 	do_string("add1 = lambda x:x+1\n");
 	printf("call_add1: %d\n", call_add1(10));
 
-    mp_deinit();
+	mp_deinit();
 	free(heap);
 
     return 0;
