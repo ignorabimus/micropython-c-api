@@ -7,18 +7,13 @@
 #pragma comment(lib, "micropython.lib")
 #endif
 
-#include "py/parsehelper.h"
+#include "py/compile.h"
 #include "py/runtime.h"
 #include "py/gc.h"
 
 int execute_from_lexer(mp_lexer_t *lex, mp_parse_input_kind_t input_kind, bool is_repl);
 int handle_uncaught_exception(mp_obj_t exc);
-
-bool do_string(const char *str)
-{
-	mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_stdin_gt_, str, strlen(str), false);
-	return execute_from_lexer(lex, MP_PARSE_SINGLE_INPUT, false) == 0;
-}
+int do_str(const char *str);
 
 mp_obj_t callback_print(mp_obj_t arg)
 {
@@ -59,10 +54,10 @@ int main(void) {
 
 	// call a C function from Python
 	mp_store_name(qstr_from_str("c_print"), mp_obj_new_fun_native(1, callback_print));
-	do_string("c_print('Hello world!')\n");
+	do_str("c_print('Hello world!')\n");
 
 	// call a Python function from C
-	do_string("add1 = lambda x:x+1\n");
+	do_str("add1 = lambda x:x+1\n");
 	printf("call_add1: %d\n", call_add1(10));
 
 	mp_deinit();
