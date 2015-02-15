@@ -28,6 +28,13 @@
 
 #if MICROPY_NLR_SETJMP
 
+unsigned int nlr_push_dummy(nlr_buf_t *buf) {
+    return 0;
+}
+
+void nlr_pop_dummy(void) {
+}
+
 void nlr_setjmp_jump(void *val) {
     nlr_buf_t *buf = MP_STATE_VM(nlr_top);
     MP_STATE_VM(nlr_top) = buf->prev;

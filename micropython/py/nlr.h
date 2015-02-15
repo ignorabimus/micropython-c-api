@@ -73,6 +73,8 @@ NORETURN void nlr_setjmp_jump(void *val);
 #define nlr_push(buf) ((buf)->prev = MP_STATE_VM(nlr_top), MP_STATE_VM(nlr_top) = (buf), setjmp((buf)->jmpbuf))
 #define nlr_pop() { MP_STATE_VM(nlr_top) = MP_STATE_VM(nlr_top)->prev; }
 #define nlr_jump(val) nlr_setjmp_jump(val)
+unsigned int nlr_push_dummy(nlr_buf_t *);
+void nlr_pop_dummy(void);
 #else
 unsigned int nlr_push(nlr_buf_t *);
 void nlr_pop(void);

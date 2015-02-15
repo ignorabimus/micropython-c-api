@@ -406,7 +406,10 @@ STATIC mp_obj_t mp_builtin_print(mp_uint_t n_args, const mp_obj_t *args, mp_map_
         end_data = mp_obj_str_get_data(end_elem->value, &end_len);
     }
     #if MICROPY_PY_IO
-    extern mp_uint_t mp_sys_stdout_obj; // type is irrelevant, just need pointer
+    extern struct {
+        mp_obj_base_t base;
+        int fd;
+    } mp_sys_stdout_obj; // type is irrelevant, just need pointer
     mp_obj_t stream_obj = &mp_sys_stdout_obj;
     mp_map_elem_t *file_elem = mp_map_lookup(kwargs, MP_OBJ_NEW_QSTR(MP_QSTR_file), MP_MAP_LOOKUP);
     if (file_elem != NULL && file_elem->value != mp_const_none) {
@@ -443,7 +446,10 @@ MP_DEFINE_CONST_FUN_OBJ_KW(mp_builtin_print_obj, 0, mp_builtin_print);
 STATIC mp_obj_t mp_builtin___repl_print__(mp_obj_t o) {
     if (o != mp_const_none) {
         #if MICROPY_PY_IO
-        extern mp_uint_t mp_sys_stdout_obj; // type is irrelevant, just need pointer
+        extern struct {
+            mp_obj_base_t base;
+            int fd;
+        } mp_sys_stdout_obj; // type is irrelevant, just need pointer
         pfenv_t pfenv;
         pfenv.data = &mp_sys_stdout_obj;
         pfenv.print_strn = (void (*)(void *, const char *, mp_uint_t))mp_stream_write;

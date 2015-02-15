@@ -32,13 +32,19 @@
 #endif
 
 #define MICROPY_ALLOC_PATH_MAX      (260) //see minwindef.h for msvc or limits.h for mingw
-#define MICROPY_EMIT_X64            (0)
+#if defined( __MINGW32__ ) && defined( __LP64__ ) || defined ( _MSC_VER ) && defined( _WIN64 )
+#define MICROPY_EMIT_X64            (1)
+#define N_X64                       (1)
+#else
+#define MICROPY_EMIT_X86            (1)
+#define N_X86                       (1)
+#endif
 #define MICROPY_EMIT_THUMB          (0)
 #define MICROPY_EMIT_INLINE_THUMB   (0)
 #define MICROPY_COMP_MODULE_CONST   (1)
 #define MICROPY_ENABLE_GC           (1)
 #define MICROPY_ENABLE_FINALISER    (1)
-#define MICROPY_STACK_CHECK         (1)
+#define MICROPY_STACK_CHECK         (0)
 #define MICROPY_MEM_STATS           (1)
 #define MICROPY_DEBUG_PRINTERS      (1)
 #define MICROPY_HELPER_REPL         (1)

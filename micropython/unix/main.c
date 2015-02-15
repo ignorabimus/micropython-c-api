@@ -78,7 +78,7 @@ STATIC void sighandler(int signum) {
 // If exc is SystemExit, return value where FORCED_EXIT bit set,
 // and lower 8 bits are SystemExit value. For all other exceptions,
 // return 1.
-STATIC int handle_uncaught_exception(mp_obj_t exc) {
+int handle_uncaught_exception(mp_obj_t exc) {
     // check for SystemExit
     if (mp_obj_is_subclass_fast(mp_obj_get_type(exc), &mp_type_SystemExit)) {
         // None is an exit value of 0; an int is its value; anything else is 1
@@ -199,16 +199,17 @@ STATIC int do_repl(void) {
     }
 }
 
-STATIC int do_file(const char *file) {
+int do_file(const char *file) {
     mp_lexer_t *lex = mp_lexer_new_from_file(file);
     return execute_from_lexer(lex, MP_PARSE_FILE_INPUT, false);
 }
 
-STATIC int do_str(const char *str) {
+int do_str(const char *str) {
     mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_stdin_gt_, str, strlen(str), false);
     return execute_from_lexer(lex, MP_PARSE_FILE_INPUT, false);
 }
 
+#ifndef STATIC_LIB
 STATIC int usage(char **argv) {
     printf(
 "usage: %s [<opts>] [-X <implopt>] [-c <command>] [<filename>]\n"
@@ -479,6 +480,7 @@ int main(int argc, char **argv) {
     //printf("total bytes = %d\n", m_get_total_bytes_allocated());
     return ret & 0xff;
 }
+#endif
 
 uint mp_import_stat(const char *path) {
     struct stat st;
