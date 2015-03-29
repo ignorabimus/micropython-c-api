@@ -29,10 +29,13 @@
 #if MICROPY_NLR_SETJMP
 
 unsigned int nlr_push_dummy(nlr_buf_t *buf) {
+    buf->prev = MP_STATE_VM(nlr_top);
+    MP_STATE_VM(nlr_top) = buf;
     return 0;
 }
 
 void nlr_pop_dummy(void) {
+    MP_STATE_VM(nlr_top) = MP_STATE_VM(nlr_top)->prev;
 }
 
 void nlr_setjmp_jump(void *val) {

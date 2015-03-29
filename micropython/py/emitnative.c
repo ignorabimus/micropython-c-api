@@ -1802,6 +1802,10 @@ STATIC void emit_native_setup_except(emit_t *emit, mp_uint_t label) {
     need_stack_settled(emit);
     emit_get_stack_pointer_to_reg_for_push(emit, REG_ARG_1, sizeof(nlr_buf_t) / sizeof(mp_uint_t)); // arg1 = pointer to nlr buf
     emit_call(emit, MP_F_NLR_PUSH);
+#if MICROPY_NLR_SETJMP
+    need_reg_all(emit);
+    ASM_CALL_IND(emit->as, setjmp, MP_F_NLR_PUSH);
+#endif
     ASM_JUMP_IF_REG_NONZERO(emit->as, REG_RET, label);
     emit_post(emit);
 }
