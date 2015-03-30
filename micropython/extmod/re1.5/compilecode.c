@@ -66,7 +66,7 @@ int re1_5_sizecode(const char *re)
 
 #define EMIT(at, byte) code[at] = byte
 
-const char *_compilecode(const char *re, ByteProg *prog)
+static const char *_compilecode(const char *re, ByteProg *prog)
 {
     char *code = prog->insts;
     int pc = prog->bytelen;
@@ -78,6 +78,13 @@ const char *_compilecode(const char *re, ByteProg *prog)
         switch (*re) {
         case '\\':
             re++;
+            if ((*re | 0x20) == 'd' || (*re | 0x20) == 's' || (*re | 0x20) == 'w') {
+                term = pc;
+                EMIT(pc++, NamedClass);
+                EMIT(pc++, *re);
+                prog->len++;
+                break;
+            }
         default:
             term = pc;
             EMIT(pc++, Char);
@@ -112,29 +119,34 @@ const char *_compilecode(const char *re, ByteProg *prog)
             EMIT(term + 1, cnt);
             break;
         }
-        case '(':
+        case '(': {
             term = pc;
+            int sub = ++prog->sub;
 
             EMIT(pc++, Save);
-            EMIT(pc++, 2 * ++prog->sub);
+            EMIT(pc++, 2 * sub);
             prog->len++;
 
             prog->bytelen = pc;
             re = _compilecode(re + 1, prog);
+            if (re == NULL || *re != ')') return NULL; // error, or no matching paren
             pc = prog->bytelen;
 
             EMIT(pc++, Save);
-            EMIT(pc++, 2 * prog->sub + 1);
+            EMIT(pc++, 2 * sub + 1);
             prog->len++;
 
             break;
+        }
         case '?':
+            if (pc == term) return NULL; // nothing to repeat
             insert_code(code, term, 2, &pc);
             EMIT(term, Split);
             EMIT(term + 1, REL(term, pc));
             prog->len++;
             break;
         case '*':
+            if (pc == term) return NULL; // nothing to repeat
             insert_code(code, term, 2, &pc);
             EMIT(pc, Jmp);
             EMIT(pc + 1, REL(pc, term));
@@ -149,6 +161,7 @@ const char *_compilecode(const char *re, ByteProg *prog)
             prog->len += 2;
             break;
         case '+':
+            if (pc == term) return NULL; // nothing to repeat
             if (re[1] == '?') {
                 EMIT(pc, Split);
                 re++;
@@ -208,7 +221,8 @@ int re1_5_compilecode(ByteProg *prog, const char *re)
     prog->insts[prog->bytelen++] = 0;
     prog->len++;
 
-    _compilecode(re, prog);
+    re = _compilecode(re, prog);
+    if (re == NULL || *re) return 1;
 
     prog->insts[prog->bytelen++] = Save;
     prog->insts[prog->bytelen++] = 1;

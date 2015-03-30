@@ -585,8 +585,8 @@ mp_obj_t mp_call_method_n_kw_var(bool have_self, mp_uint_t n_args_n_kw, const mp
     }
     uint n_args = n_args_n_kw & 0xff;
     uint n_kw = (n_args_n_kw >> 8) & 0xff;
-    mp_obj_t pos_seq = args[n_args + 2 * n_kw]; // map be MP_OBJ_NULL
-    mp_obj_t kw_dict = args[n_args + 2 * n_kw + 1]; // map be MP_OBJ_NULL
+    mp_obj_t pos_seq = args[n_args + 2 * n_kw]; // may be MP_OBJ_NULL
+    mp_obj_t kw_dict = args[n_args + 2 * n_kw + 1]; // may be MP_OBJ_NULL
 
     DEBUG_OP_printf("call method var (fun=%p, self=%p, n_args=%u, n_kw=%u, args=%p, seq=%p, dict=%p)\n", fun, self, n_args, n_kw, args, pos_seq, kw_dict);
 
@@ -854,16 +854,41 @@ mp_obj_t mp_load_attr(mp_obj_t base, qstr attr) {
     }
 }
 
+// Given a member that was extracted from an instance, convert it correctly
+// and put the result in the dest[] array for a possible method call.
+// Conversion means dealing with static/class methods, callables, and values.
+// see http://docs.python.org/3/howto/descriptor.html
+void mp_convert_member_lookup(mp_obj_t self, const mp_obj_type_t *type, mp_obj_t member, mp_obj_t *dest) {
+    if (MP_OBJ_IS_TYPE(member, &mp_type_staticmethod)) {
+        // return just the function
+        dest[0] = ((mp_obj_static_class_method_t*)member)->fun;
+    } else if (MP_OBJ_IS_TYPE(member, &mp_type_classmethod)) {
+        // return a bound method, with self being the type of this object
+        dest[0] = ((mp_obj_static_class_method_t*)member)->fun;
+        dest[1] = (mp_obj_t)type;
+    } else if (MP_OBJ_IS_TYPE(member, &mp_type_type)) {
+        // Don't try to bind types (even though they're callable)
+        dest[0] = member;
+    } else if (mp_obj_is_callable(member)) {
+        // return a bound method, with self being this object
+        dest[0] = member;
+        dest[1] = self;
+    } else {
+        // class member is a value, so just return that value
+        dest[0] = member;
+    }
+}
+
 // no attribute found, returns:     dest[0] == MP_OBJ_NULL, dest[1] == MP_OBJ_NULL
 // normal attribute found, returns: dest[0] == <attribute>, dest[1] == MP_OBJ_NULL
 // method attribute found, returns: dest[0] == <method>,    dest[1] == <self>
-void mp_load_method_maybe(mp_obj_t base, qstr attr, mp_obj_t *dest) {
+void mp_load_method_maybe(mp_obj_t obj, qstr attr, mp_obj_t *dest) {
     // clear output to indicate no attribute/method found yet
     dest[0] = MP_OBJ_NULL;
     dest[1] = MP_OBJ_NULL;
 
     // get the type
-    mp_obj_type_t *type = mp_obj_get_type(base);
+    mp_obj_type_t *type = mp_obj_get_type(obj);
 
     // look for built-in names
     if (0) {
@@ -875,11 +900,11 @@ void mp_load_method_maybe(mp_obj_t base, qstr attr, mp_obj_t *dest) {
 
     } else if (attr == MP_QSTR___next__ && type->iternext != NULL) {
         dest[0] = (mp_obj_t)&mp_builtin_next_obj;
-        dest[1] = base;
+        dest[1] = obj;
 
     } else if (type->load_attr != NULL) {
         // this type can do its own load, so call it
-        type->load_attr(base, attr, dest);
+        type->load_attr(obj, attr, dest);
 
     } else if (type->locals_dict != NULL) {
         // generic method lookup
@@ -888,26 +913,7 @@ void mp_load_method_maybe(mp_obj_t base, qstr attr, mp_obj_t *dest) {
         mp_map_t *locals_map = mp_obj_dict_get_map(type->locals_dict);
         mp_map_elem_t *elem = mp_map_lookup(locals_map, MP_OBJ_NEW_QSTR(attr), MP_MAP_LOOKUP);
         if (elem != NULL) {
-            // check if the methods are functions, static or class methods
-            // see http://docs.python.org/3/howto/descriptor.html
-            if (MP_OBJ_IS_TYPE(elem->value, &mp_type_staticmethod)) {
-                // return just the function
-                dest[0] = ((mp_obj_static_class_method_t*)elem->value)->fun;
-            } else if (MP_OBJ_IS_TYPE(elem->value, &mp_type_classmethod)) {
-                // return a bound method, with self being the type of this object
-                dest[0] = ((mp_obj_static_class_method_t*)elem->value)->fun;
-                dest[1] = mp_obj_get_type(base);
-            } else if (MP_OBJ_IS_TYPE(elem->value, &mp_type_type)) {
-                // Don't try to bind types
-                dest[0] = elem->value;
-            } else if (mp_obj_is_callable(elem->value)) {
-                // return a bound method, with self being this object
-                dest[0] = elem->value;
-                dest[1] = base;
-            } else {
-                // class member is a value, so just return that value
-                dest[0] = elem->value;
-            }
+            mp_convert_member_lookup(obj, type, elem->value, dest);
         }
     }
 }
@@ -957,37 +963,31 @@ void mp_store_attr(mp_obj_t base, qstr attr, mp_obj_t value) {
 
 mp_obj_t mp_getiter(mp_obj_t o_in) {
     assert(o_in);
+
+    // check for native getiter (corresponds to __iter__)
     mp_obj_type_t *type = mp_obj_get_type(o_in);
     if (type->getiter != NULL) {
         mp_obj_t iter = type->getiter(o_in);
-        if (iter == MP_OBJ_NULL) {
-            goto not_iterable;
+        if (iter != MP_OBJ_NULL) {
+            return iter;
         }
-        return iter;
+    }
+
+    // check for __getitem__
+    mp_obj_t dest[2];
+    mp_load_method_maybe(o_in, MP_QSTR___getitem__, dest);
+    if (dest[0] != MP_OBJ_NULL) {
+        // __getitem__ exists, create and return an iterator
+        return mp_obj_new_getitem_iter(dest);
+    }
+
+    // object not iterable
+    if (MICROPY_ERROR_REPORTING == MICROPY_ERROR_REPORTING_TERSE) {
+        nlr_raise(mp_obj_new_exception_msg(&mp_type_TypeError,
+            "object not iterable"));
     } else {
-        // check for __iter__ method
-        mp_obj_t dest[2];
-        mp_load_method_maybe(o_in, MP_QSTR___iter__, dest);
-        if (dest[0] != MP_OBJ_NULL) {
-            // __iter__ exists, call it and return its result
-            return mp_call_method_n_kw(0, 0, dest);
-        } else {
-            mp_load_method_maybe(o_in, MP_QSTR___getitem__, dest);
-            if (dest[0] != MP_OBJ_NULL) {
-                // __getitem__ exists, create an iterator
-                return mp_obj_new_getitem_iter(dest);
-            } else {
-                // object not iterable
-not_iterable:
-                if (MICROPY_ERROR_REPORTING == MICROPY_ERROR_REPORTING_TERSE) {
-                    nlr_raise(mp_obj_new_exception_msg(&mp_type_TypeError,
-                        "object not iterable"));
-                } else {
-                    nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError,
-                        "'%s' object is not iterable", mp_obj_get_type_str(o_in)));
-                }
-            }
-        }
+        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError,
+            "'%s' object is not iterable", mp_obj_get_type_str(o_in)));
     }
 }
 

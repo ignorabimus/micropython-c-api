@@ -137,7 +137,7 @@ void mp_obj_int_print(void (*print)(void *env, const char *fmt, ...), void *env,
     print(env, "%s", str);
 
     if (buf != stack_buf) {
-        m_free(buf, buf_size);
+        m_del(char, buf, buf_size);
     }
 }
 
@@ -264,6 +264,16 @@ mp_int_t mp_obj_int_hash(mp_obj_t self_in) {
 
 bool mp_obj_int_is_positive(mp_obj_t self_in) {
     return mp_obj_get_int(self_in) >= 0;
+}
+
+// This must handle int and bool types, and must raise a
+// TypeError if the argument is not integral
+mp_obj_t mp_obj_int_abs(mp_obj_t self_in) {
+    mp_int_t val = mp_obj_get_int(self_in);
+    if (val < 0) {
+        val = -val;
+    }
+    return MP_OBJ_NEW_SMALL_INT(val);
 }
 
 // This is called for operations on SMALL_INT that are not handled by mp_unary_op

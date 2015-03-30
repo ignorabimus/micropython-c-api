@@ -66,6 +66,10 @@ Q(__add__)
 Q(__sub__)
 Q(__repr__)
 Q(__str__)
+#if MICROPY_PY_DESCRIPTORS
+Q(__get__)
+Q(__set__)
+#endif
 Q(__getattr__)
 Q(__del__)
 Q(__call__)
@@ -76,7 +80,11 @@ Q(__le__)
 Q(__ge__)
 Q(__reversed__)
 #if MICROPY_PY_ALL_SPECIAL_METHODS
+Q(__mul__)
+Q(__truediv__)
+Q(__floordiv__)
 Q(__iadd__)
+Q(__isub__)
 #endif
 
 Q(micropython)
@@ -133,6 +141,9 @@ Q(TypeError)
 Q(UnboundLocalError)
 Q(ValueError)
 Q(ZeroDivisionError)
+#if MICROPY_PY_BUILTINS_STR_UNICODE
+Q(UnicodeError)
+#endif
 
 Q(None)
 Q(False)
@@ -140,6 +151,10 @@ Q(True)
 Q(object)
 
 Q(NoneType)
+
+#if MICROPY_PY_COLLECTIONS_ORDEREDDICT
+Q(OrderedDict)
+#endif
 
 Q(abs)
 Q(all)
@@ -185,6 +200,7 @@ Q(float)
 #endif
 Q(from_bytes)
 Q(getattr)
+Q(setattr)
 Q(globals)
 Q(hasattr)
 Q(hash)
@@ -236,6 +252,11 @@ Q(single)
 
 Q(sep)
 Q(end)
+
+#if MICROPY_PY_BUILTINS_RANGE_ATTRS
+Q(step)
+Q(stop)
+#endif
 
 Q(clear)
 Q(copy)
@@ -358,10 +379,12 @@ Q(frexp)
 Q(ldexp)
 Q(degrees)
 Q(radians)
+#if MICROPY_PY_MATH_SPECIAL_FUNCTIONS
 Q(erf)
 Q(erfc)
 Q(gamma)
 Q(lgamma)
+#endif
 #endif
 
 #if MICROPY_PY_CMATH
@@ -384,6 +407,7 @@ Q(qstr_info)
 #if MICROPY_ENABLE_EMERGENCY_EXCEPTION_BUF && (MICROPY_EMERGENCY_EXCEPTION_BUF_SIZE == 0)
 Q(alloc_emergency_exception_buf)
 #endif
+Q(maximum recursion depth exceeded)
 
 Q(<module>)
 Q(<lambda>)

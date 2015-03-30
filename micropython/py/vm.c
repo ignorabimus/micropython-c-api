@@ -393,8 +393,9 @@ dispatch_loop:
                     DISPATCH();
                 }
                 #else
-                // This caching code works with MICROPY_PY_BUILTINS_PROPERTY enabled because
-                // if the attr exists in self->members then it can't be a property.  A
+                // This caching code works with MICROPY_PY_BUILTINS_PROPERTY and/or
+                // MICROPY_PY_DESCRIPTORS enabled because if the attr exists in
+                // self->members then it can't be a property or have descriptors.  A
                 // consequence of this is that we can't use MP_MAP_LOOKUP_ADD_IF_NOT_FOUND
                 // in the fast-path below, because that store could override a property.
                 ENTRY(MP_BC_STORE_ATTR): {
@@ -566,27 +567,20 @@ dispatch_loop:
                         SET_TOP(mp_const_none);
                         mp_call_function_n_kw(obj, 3, 0, no_exc);
                     } else if (MP_OBJ_IS_SMALL_INT(TOP())) {
-                        mp_obj_t cause = POP();
-                        switch (MP_OBJ_SMALL_INT_VALUE(cause)) {
-                            case UNWIND_RETURN: {
-                                mp_obj_t retval = POP();
-                                mp_call_function_n_kw(TOP(), 3, 0, no_exc);
-                                SET_TOP(retval);
-                                PUSH(cause);
-                                break;
-                            }
-                            case UNWIND_JUMP: {
-                                mp_call_function_n_kw(sp[-2], 3, 0, no_exc);
-                                // Pop __exit__ boundmethod at sp[-2]
-                                sp[-2] = sp[-1];
-                                sp[-1] = sp[0];
-                                SET_TOP(cause);
-                                break;
-                            }
-                            default:
-                                assert(0);
+                        mp_int_t cause_val = MP_OBJ_SMALL_INT_VALUE(TOP());
+                        if (cause_val == UNWIND_RETURN) {
+                            mp_call_function_n_kw(sp[-2], 3, 0, no_exc);
+                        } else {
+                            assert(cause_val == UNWIND_JUMP);
+                            mp_call_function_n_kw(sp[-3], 3, 0, no_exc);
+                            // Pop __exit__ boundmethod at sp[-3]
+                            sp[-3] = sp[-2];
                         }
-                    } else if (mp_obj_is_exception_type(TOP())) {
+                        sp[-2] = sp[-1]; // copy retval down
+                        sp[-1] = sp[0]; // copy cause down
+                        sp--; // discard top value (was cause)
+                    } else {
+                        assert(mp_obj_is_exception_type(TOP()));
                         // Need to pass (sp[0], sp[-1], sp[-2]) as arguments so must reverse the
                         // order of these on the value stack (don't want to create a temporary
                         // array because it increases stack footprint of the VM).
@@ -614,8 +608,6 @@ dispatch_loop:
                             sp[-1] = obj;
                             sp--;
                         }
-                    } else {
-                        assert(0);
                     }
                     DISPATCH();
                 }
@@ -674,19 +666,17 @@ unwind_jump:;
                     }
                     if (TOP() == mp_const_none) {
                         sp--;
-                    } else if (MP_OBJ_IS_SMALL_INT(TOP())) {
+                    } else {
+                        assert(MP_OBJ_IS_SMALL_INT(TOP()));
                         // We finished "finally" coroutine and now dispatch back
                         // to our caller, based on TOS value
                         mp_unwind_reason_t reason = MP_OBJ_SMALL_INT_VALUE(POP());
-                        switch (reason) {
-                            case UNWIND_RETURN:
-                                goto unwind_return;
-                            case UNWIND_JUMP:
-                                goto unwind_jump;
+                        if (reason == UNWIND_RETURN) {
+                            goto unwind_return;
+                        } else {
+                            assert(reason == UNWIND_JUMP);
+                            goto unwind_jump;
                         }
-                        assert(0);
-                    } else {
-                        assert(0);
                     }
                     DISPATCH();
 

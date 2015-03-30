@@ -29,6 +29,7 @@
 
 #include "py/nlr.h"
 #include "py/smallint.h"
+#include "py/objint.h"
 #include "py/objstr.h"
 #include "py/runtime0.h"
 #include "py/runtime.h"
@@ -38,6 +39,10 @@
 
 #if MICROPY_PY_BUILTINS_FLOAT
 #include <math.h>
+#endif
+
+#if MICROPY_PY_IO
+extern mp_uint_t mp_sys_stdout_obj; // type is irrelevant, just need pointer
 #endif
 
 // args[0] is function from class body
@@ -86,12 +91,8 @@ STATIC mp_obj_t mp_builtin___build_class__(mp_uint_t n_args, const mp_obj_t *arg
 MP_DEFINE_CONST_FUN_OBJ_VAR(mp_builtin___build_class___obj, 2, mp_builtin___build_class__);
 
 STATIC mp_obj_t mp_builtin_abs(mp_obj_t o_in) {
-    if (MP_OBJ_IS_SMALL_INT(o_in)) {
-        mp_int_t val = MP_OBJ_SMALL_INT_VALUE(o_in);
-        if (val < 0) {
-            val = -val;
-        }
-        return MP_OBJ_NEW_SMALL_INT(val);
+    if (0) {
+        // dummy
 #if MICROPY_PY_BUILTINS_FLOAT
     } else if (MP_OBJ_IS_TYPE(o_in, &mp_type_float)) {
         mp_float_t value = mp_obj_float_get(o_in);
@@ -109,8 +110,8 @@ STATIC mp_obj_t mp_builtin_abs(mp_obj_t o_in) {
 #endif
 #endif
     } else {
-        assert(0);
-        return mp_const_none;
+        // this will raise a TypeError if the argument is not integral
+        return mp_obj_int_abs(o_in);
     }
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_abs_obj, mp_builtin_abs);
@@ -406,10 +407,6 @@ STATIC mp_obj_t mp_builtin_print(mp_uint_t n_args, const mp_obj_t *args, mp_map_
         end_data = mp_obj_str_get_data(end_elem->value, &end_len);
     }
     #if MICROPY_PY_IO
-    extern struct {
-        mp_obj_base_t base;
-        int fd;
-    } mp_sys_stdout_obj; // type is irrelevant, just need pointer
     mp_obj_t stream_obj = &mp_sys_stdout_obj;
     mp_map_elem_t *file_elem = mp_map_lookup(kwargs, MP_OBJ_NEW_QSTR(MP_QSTR_file), MP_MAP_LOOKUP);
     if (file_elem != NULL && file_elem->value != mp_const_none) {
@@ -446,10 +443,6 @@ MP_DEFINE_CONST_FUN_OBJ_KW(mp_builtin_print_obj, 0, mp_builtin_print);
 STATIC mp_obj_t mp_builtin___repl_print__(mp_obj_t o) {
     if (o != mp_const_none) {
         #if MICROPY_PY_IO
-        extern struct {
-            mp_obj_base_t base;
-            int fd;
-        } mp_sys_stdout_obj; // type is irrelevant, just need pointer
         pfenv_t pfenv;
         pfenv.data = &mp_sys_stdout_obj;
         pfenv.print_strn = (void (*)(void *, const char *, mp_uint_t))mp_stream_write;
@@ -498,7 +491,7 @@ STATIC mp_obj_t mp_builtin_sum(mp_uint_t n_args, const mp_obj_t *args) {
     assert(1 <= n_args && n_args <= 2);
     mp_obj_t value;
     switch (n_args) {
-        case 1: value = mp_obj_new_int(0); break;
+        case 1: value = MP_OBJ_NEW_SMALL_INT(0); break;
         default: value = args[1]; break;
     }
     mp_obj_t iterable = mp_getiter(args[0]);
@@ -540,19 +533,19 @@ STATIC inline mp_obj_t mp_load_attr_default(mp_obj_t base, qstr attr, mp_obj_t d
 }
 
 STATIC mp_obj_t mp_builtin_getattr(mp_uint_t n_args, const mp_obj_t *args) {
-    mp_obj_t attr = args[1];
-    if (MP_OBJ_IS_TYPE(attr, &mp_type_str)) {
-        attr = mp_obj_str_intern(attr);
-    } else if (!MP_OBJ_IS_QSTR(attr)) {
-        nlr_raise(mp_obj_new_exception_msg(&mp_type_TypeError, "string required"));
-    }
     mp_obj_t defval = MP_OBJ_NULL;
     if (n_args > 2) {
         defval = args[2];
     }
-    return mp_load_attr_default(args[0], MP_OBJ_QSTR_VALUE(attr), defval);
+    return mp_load_attr_default(args[0], mp_obj_str_get_qstr(args[1]), defval);
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_builtin_getattr_obj, 2, 3, mp_builtin_getattr);
+
+STATIC mp_obj_t mp_builtin_setattr(mp_obj_t base, mp_obj_t attr, mp_obj_t value) {
+    mp_store_attr(base, mp_obj_str_get_qstr(attr), value);
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_3(mp_builtin_setattr_obj, mp_builtin_setattr);
 
 STATIC mp_obj_t mp_builtin_hasattr(mp_obj_t object_in, mp_obj_t attr_in) {
     assert(MP_OBJ_IS_QSTR(attr_in));
@@ -643,6 +636,7 @@ STATIC const mp_map_elem_t mp_module_builtins_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_execfile), (mp_obj_t)&mp_builtin_execfile_obj },
 #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_getattr), (mp_obj_t)&mp_builtin_getattr_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_setattr), (mp_obj_t)&mp_builtin_setattr_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_globals), (mp_obj_t)&mp_builtin_globals_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_hasattr), (mp_obj_t)&mp_builtin_hasattr_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_hash), (mp_obj_t)&mp_builtin_hash_obj },
@@ -688,6 +682,9 @@ STATIC const mp_map_elem_t mp_module_builtins_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_SyntaxError), (mp_obj_t)&mp_type_SyntaxError },
     { MP_OBJ_NEW_QSTR(MP_QSTR_SystemExit), (mp_obj_t)&mp_type_SystemExit },
     { MP_OBJ_NEW_QSTR(MP_QSTR_TypeError), (mp_obj_t)&mp_type_TypeError },
+    #if MICROPY_PY_BUILTINS_STR_UNICODE
+    { MP_OBJ_NEW_QSTR(MP_QSTR_UnicodeError), (mp_obj_t)&mp_type_UnicodeError },
+    #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_ValueError), (mp_obj_t)&mp_type_ValueError },
     { MP_OBJ_NEW_QSTR(MP_QSTR_ZeroDivisionError), (mp_obj_t)&mp_type_ZeroDivisionError },
     // Somehow CPython managed to have OverflowError not inherit from ValueError ;-/

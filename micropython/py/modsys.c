@@ -38,15 +38,10 @@
 
 /// \module sys - system specific functions
 
-typedef struct _mp_obj_fdfile_t {
-    mp_obj_base_t base;
-    int fd;
-} mp_obj_fdfile_t;
-
 // defined per port; type of these is irrelevant, just need pointer
-extern mp_obj_fdfile_t mp_sys_stdin_obj;
-extern mp_obj_fdfile_t mp_sys_stdout_obj;
-extern mp_obj_fdfile_t mp_sys_stderr_obj;
+extern mp_uint_t mp_sys_stdin_obj;
+extern mp_uint_t mp_sys_stdout_obj;
+extern mp_uint_t mp_sys_stderr_obj;
 
 /// \constant version - Python language version that this implementation conforms to, as a string
 STATIC const MP_DEFINE_STR_OBJ(version_obj, "3.4.0");

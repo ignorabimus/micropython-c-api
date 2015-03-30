@@ -456,7 +456,7 @@ STATIC mp_obj_t str_join(mp_obj_t self_in, mp_obj_t arg) {
 
 #define is_ws(c) ((c) == ' ' || (c) == '\t')
 
-STATIC mp_obj_t str_split(mp_uint_t n_args, const mp_obj_t *args) {
+mp_obj_t mp_obj_str_split(mp_uint_t n_args, const mp_obj_t *args) {
     const mp_obj_type_t *self_type = mp_obj_get_type(args[0]);
     mp_int_t splits = -1;
     mp_obj_t sep = mp_const_none;
@@ -535,7 +535,7 @@ STATIC mp_obj_t str_rsplit(mp_uint_t n_args, const mp_obj_t *args) {
     if (n_args < 3) {
         // If we don't have split limit, it doesn't matter from which side
         // we split.
-        return str_split(n_args, args);
+        return mp_obj_str_split(n_args, args);
     }
     const mp_obj_type_t *self_type = mp_obj_get_type(args[0]);
     mp_obj_t sep = args[1];
@@ -1083,7 +1083,7 @@ mp_obj_t mp_obj_str_format(mp_uint_t n_args, const mp_obj_t *args, mp_map_t *kwa
         if (arg_looks_integer(arg)) {
             switch (type) {
                 case 'b':
-                    pfenv_print_mp_int(&pfenv_vstr, arg, 1, 2, 'a', flags, fill, width, 0);
+                    pfenv_print_mp_int(&pfenv_vstr, arg, 2, 'a', flags, fill, width, 0);
                     continue;
 
                 case 'c':
@@ -1096,7 +1096,7 @@ mp_obj_t mp_obj_str_format(mp_uint_t n_args, const mp_obj_t *args, mp_map_t *kwa
                 case '\0':  // No explicit format type implies 'd'
                 case 'n':   // I don't think we support locales in uPy so use 'd'
                 case 'd':
-                    pfenv_print_mp_int(&pfenv_vstr, arg, 1, 10, 'a', flags, fill, width, 0);
+                    pfenv_print_mp_int(&pfenv_vstr, arg, 10, 'a', flags, fill, width, 0);
                     continue;
 
                 case 'o':
@@ -1104,12 +1104,12 @@ mp_obj_t mp_obj_str_format(mp_uint_t n_args, const mp_obj_t *args, mp_map_t *kwa
                         flags |= PF_FLAG_SHOW_OCTAL_LETTER;
                     }
 
-                    pfenv_print_mp_int(&pfenv_vstr, arg, 1, 8, 'a', flags, fill, width, 0);
+                    pfenv_print_mp_int(&pfenv_vstr, arg, 8, 'a', flags, fill, width, 0);
                     continue;
 
                 case 'X':
                 case 'x':
-                    pfenv_print_mp_int(&pfenv_vstr, arg, 1, 16, type - ('X' - 'A'), flags, fill, width, 0);
+                    pfenv_print_mp_int(&pfenv_vstr, arg, 16, type - ('X' - 'A'), flags, fill, width, 0);
                     continue;
 
                 case 'e':
@@ -1377,7 +1377,7 @@ not_enough_args:
             case 'd':
             case 'i':
             case 'u':
-                pfenv_print_mp_int(&pfenv_vstr, arg_as_int(arg), 1, 10, 'a', flags, fill, width, prec);
+                pfenv_print_mp_int(&pfenv_vstr, arg_as_int(arg), 10, 'a', flags, fill, width, prec);
                 break;
 
 #if MICROPY_PY_BUILTINS_FLOAT
@@ -1395,7 +1395,7 @@ not_enough_args:
                 if (alt) {
                     flags |= (PF_FLAG_SHOW_PREFIX | PF_FLAG_SHOW_OCTAL_LETTER);
                 }
-                pfenv_print_mp_int(&pfenv_vstr, arg, 1, 8, 'a', flags, fill, width, prec);
+                pfenv_print_mp_int(&pfenv_vstr, arg, 8, 'a', flags, fill, width, prec);
                 break;
 
             case 'r':
@@ -1419,7 +1419,7 @@ not_enough_args:
 
             case 'X':
             case 'x':
-                pfenv_print_mp_int(&pfenv_vstr, arg, 1, 16, *str - ('X' - 'A'), flags | alt, fill, width, prec);
+                pfenv_print_mp_int(&pfenv_vstr, arg, 16, *str - ('X' - 'A'), flags | alt, fill, width, prec);
                 break;
 
             default:
@@ -1762,7 +1762,7 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rfind_obj, 2, 4, str_rfind);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_index_obj, 2, 4, str_index);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rindex_obj, 2, 4, str_rindex);
 MP_DEFINE_CONST_FUN_OBJ_2(str_join_obj, str_join);
-MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_split_obj, 1, 3, str_split);
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_split_obj, 1, 3, mp_obj_str_split);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rsplit_obj, 1, 3, str_rsplit);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_startswith_obj, 2, 3, str_startswith);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_endswith_obj, 2, 3, str_endswith);

@@ -112,6 +112,12 @@
 #define MICROPY_MODULE_DICT_SIZE (1)
 #endif
 
+// Whether realloc/free should be passed allocated memory region size
+// You must enable this if MICROPY_MEM_STATS is enabled
+#ifndef MICROPY_MALLOC_USES_ALLOCATED_SIZE
+#define MICROPY_MALLOC_USES_ALLOCATED_SIZE (0)
+#endif
+
 // Number of bytes used to store qstr length
 // Dictates hard limit on maximum Python identifier length, but 1 byte
 // (limit of 255 bytes in an identifier) should be enough for everyone
@@ -169,6 +175,18 @@
 #define MICROPY_COMP_CONST (1)
 #endif
 
+// Whether to enable optimisation of: a, b = c, d
+// Costs 124 bytes (Thumb2)
+#ifndef MICROPY_COMP_DOUBLE_TUPLE_ASSIGN
+#define MICROPY_COMP_DOUBLE_TUPLE_ASSIGN (1)
+#endif
+
+// Whether to enable optimisation of: a, b, c = d, e, f
+// Cost 156 bytes (Thumb2)
+#ifndef MICROPY_COMP_TRIPLE_TUPLE_ASSIGN
+#define MICROPY_COMP_TRIPLE_TUPLE_ASSIGN (0)
+#endif
+
 /*****************************************************************************/
 /* Internal debugging stuff                                                  */
 
@@ -178,7 +196,7 @@
 #endif
 
 // Whether to build functions that print debugging info:
-//   mp_token_show
+//   mp_lexer_show_token
 //   mp_bytecode_print
 //   mp_parse_node_print
 #ifndef MICROPY_DEBUG_PRINTERS
@@ -341,6 +359,17 @@ typedef double mp_float_t;
 /*****************************************************************************/
 /* Fine control over Python builtins, classes, modules, etc                  */
 
+// Whether to implement attributes on functions
+#ifndef MICROPY_PY_FUNCTION_ATTRS
+#define MICROPY_PY_FUNCTION_ATTRS (0)
+#endif
+
+// Whether to support descriptors (__get__ and __set__)
+// This costs some code size and makes all load attrs and store attrs slow
+#ifndef MICROPY_PY_DESCRIPTORS
+#define MICROPY_PY_DESCRIPTORS (0)
+#endif
+
 // Whether str object is proper unicode
 #ifndef MICROPY_PY_BUILTINS_STR_UNICODE
 #define MICROPY_PY_BUILTINS_STR_UNICODE (0)
@@ -376,6 +405,12 @@ typedef double mp_float_t;
 #define MICROPY_PY_BUILTINS_PROPERTY (1)
 #endif
 
+// Whether to implement the start/stop/step attributes (readback) on
+// the "range" builtin type. Rarely used, and costs ~60 bytes (x86).
+#ifndef MICROPY_PY_BUILTINS_RANGE_ATTRS
+#define MICROPY_PY_BUILTINS_RANGE_ATTRS (1)
+#endif
+
 // Whether to support complete set of special methods
 // for user classes, otherwise only the most used
 #ifndef MICROPY_PY_ALL_SPECIAL_METHODS
@@ -409,14 +444,30 @@ typedef double mp_float_t;
 #define MICROPY_PY_ARRAY (1)
 #endif
 
+// Whether to support slice assignments for array (and bytearray).
+// This is rarely used, but adds ~0.5K of code.
+#ifndef MICROPY_PY_ARRAY_SLICE_ASSIGN
+#define MICROPY_PY_ARRAY_SLICE_ASSIGN (0)
+#endif
+
 // Whether to provide "collections" module
 #ifndef MICROPY_PY_COLLECTIONS
 #define MICROPY_PY_COLLECTIONS (1)
 #endif
 
+// Whether to provide "collections.OrderedDict" type
+#ifndef MICROPY_PY_COLLECTIONS_ORDEREDDICT
+#define MICROPY_PY_COLLECTIONS_ORDEREDDICT (0)
+#endif
+
 // Whether to provide "math" module
 #ifndef MICROPY_PY_MATH
 #define MICROPY_PY_MATH (1)
+#endif
+
+// Whether to provide special math functions: math.{erf,erfc,gamma,lgamma}
+#ifndef MICROPY_PY_MATH_SPECIAL_FUNCTIONS
+#define MICROPY_PY_MATH_SPECIAL_FUNCTIONS (0)
 #endif
 
 // Whether to provide "cmath" module

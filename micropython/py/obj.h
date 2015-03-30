@@ -89,6 +89,21 @@ typedef struct _mp_obj_base_t mp_obj_base_t;
 #define MP_OBJ_QSTR_VALUE(o) (((mp_uint_t)(o)) >> 2)
 #define MP_OBJ_NEW_QSTR(qst) ((mp_obj_t)((((mp_uint_t)(qst)) << 2) | 2))
 
+// Macros to convert between mp_obj_t and concrete object types.
+// These are identity operations in MicroPython, but ability to override
+// these operations are provided to experiment with other methods of
+// object representation and memory management.
+
+// Cast mp_obj_t to object pointer
+#ifndef MP_OBJ_CAST
+#define MP_OBJ_CAST(o) ((void*)o)
+#endif
+
+// Cast object pointer to mp_obj_t
+#ifndef MP_OBJ_UNCAST
+#define MP_OBJ_UNCAST(p) ((mp_obj_t)p)
+#endif
+
 // These macros are used to declare and define constant function objects
 // You can put "static" in front of the definitions to make them local
 
@@ -109,7 +124,8 @@ typedef struct _mp_obj_base_t mp_obj_base_t;
 #define MP_DEFINE_CONST_MAP(map_name, table_name) \
     const mp_map_t map_name = { \
         .all_keys_are_qstrs = 1, \
-        .table_is_fixed_array = 1, \
+        .is_fixed = 1, \
+        .is_ordered = 1, \
         .used = MP_ARRAY_SIZE(table_name), \
         .alloc = MP_ARRAY_SIZE(table_name), \
         .table = (mp_map_elem_t*)table_name, \
@@ -120,7 +136,8 @@ typedef struct _mp_obj_base_t mp_obj_base_t;
         .base = {&mp_type_dict}, \
         .map = { \
             .all_keys_are_qstrs = 1, \
-            .table_is_fixed_array = 1, \
+            .is_fixed = 1, \
+            .is_ordered = 1, \
             .used = MP_ARRAY_SIZE(table_name), \
             .alloc = MP_ARRAY_SIZE(table_name), \
             .table = (mp_map_elem_t*)table_name, \
@@ -150,17 +167,19 @@ typedef struct _mp_map_elem_t {
 
 typedef struct _mp_map_t {
     mp_uint_t all_keys_are_qstrs : 1;
-    mp_uint_t table_is_fixed_array : 1;
-    mp_uint_t used : (8 * sizeof(mp_uint_t) - 2);
+    mp_uint_t is_fixed : 1;     // a fixed array that can't be modified; must also be ordered
+    mp_uint_t is_ordered : 1;   // an ordered array
+    mp_uint_t used : (8 * sizeof(mp_uint_t) - 3);
     mp_uint_t alloc;
     mp_map_elem_t *table;
 } mp_map_t;
 
-// These can be or'd together
+// mp_set_lookup requires these constants to have the values they do
 typedef enum _mp_map_lookup_kind_t {
-    MP_MAP_LOOKUP,                    // 0
-    MP_MAP_LOOKUP_ADD_IF_NOT_FOUND,   // 1
-    MP_MAP_LOOKUP_REMOVE_IF_FOUND,    // 2
+    MP_MAP_LOOKUP = 0,
+    MP_MAP_LOOKUP_ADD_IF_NOT_FOUND = 1,
+    MP_MAP_LOOKUP_REMOVE_IF_FOUND = 2,
+    MP_MAP_LOOKUP_ADD_IF_NOT_FOUND_OR_REMOVE_IF_FOUND = 3, // only valid for mp_set_lookup
 } mp_map_lookup_kind_t;
 
 extern const mp_map_t mp_const_empty_map;
@@ -285,7 +304,7 @@ struct _mp_obj_type_t {
                                     // value=MP_OBJ_NULL means delete, value=MP_OBJ_SENTINEL means load, else store
                                     // can return MP_OBJ_NULL if op not supported
 
-    mp_fun_1_t getiter;
+    mp_fun_1_t getiter;             // corresponds to __iter__ special method
     mp_fun_1_t iternext; // may return MP_OBJ_STOP_ITERATION as an optimisation instead of raising StopIteration() (with no args)
 
     mp_buffer_p_t buffer_p;
@@ -327,6 +346,7 @@ extern const mp_obj_type_t mp_type_map; // map (the python builtin, not the dict
 extern const mp_obj_type_t mp_type_enumerate;
 extern const mp_obj_type_t mp_type_filter;
 extern const mp_obj_type_t mp_type_dict;
+extern const mp_obj_type_t mp_type_ordereddict;
 extern const mp_obj_type_t mp_type_range;
 extern const mp_obj_type_t mp_type_set;
 extern const mp_obj_type_t mp_type_frozenset;
@@ -369,6 +389,7 @@ extern const mp_obj_type_t mp_type_StopIteration;
 extern const mp_obj_type_t mp_type_SyntaxError;
 extern const mp_obj_type_t mp_type_SystemExit;
 extern const mp_obj_type_t mp_type_TypeError;
+extern const mp_obj_type_t mp_type_UnicodeError;
 extern const mp_obj_type_t mp_type_ValueError;
 extern const mp_obj_type_t mp_type_ZeroDivisionError;
 
@@ -429,6 +450,7 @@ mp_obj_t mp_obj_new_super(mp_obj_t type, mp_obj_t obj);
 mp_obj_t mp_obj_new_bound_meth(mp_obj_t meth, mp_obj_t self);
 mp_obj_t mp_obj_new_getitem_iter(mp_obj_t *args);
 mp_obj_t mp_obj_new_module(qstr module_name);
+mp_obj_t mp_obj_new_memoryview(byte typecode, mp_uint_t nitems, void *items);
 
 mp_obj_type_t *mp_obj_get_type(mp_const_obj_t o_in);
 const char *mp_obj_get_type_str(mp_const_obj_t o_in);
@@ -533,6 +555,7 @@ mp_int_t mp_obj_tuple_hash(mp_obj_t self_in);
 struct _mp_obj_list_t;
 void mp_obj_list_init(struct _mp_obj_list_t *o, mp_uint_t n);
 mp_obj_t mp_obj_list_append(mp_obj_t self_in, mp_obj_t arg);
+mp_obj_t mp_obj_list_remove(mp_obj_t self_in, mp_obj_t value);
 void mp_obj_list_get(mp_obj_t self_in, mp_uint_t *len, mp_obj_t **items);
 void mp_obj_list_set_len(mp_obj_t self_in, mp_uint_t len);
 void mp_obj_list_store(mp_obj_t self_in, mp_obj_t index, mp_obj_t value);
@@ -566,8 +589,8 @@ typedef struct _mp_obj_fun_builtin_t { // use this to make const objects that go
     void *fun; // must be a pointer to a callable function in ROM
 } mp_obj_fun_builtin_t;
 
-const char *mp_obj_fun_get_name(mp_const_obj_t fun);
-const char *mp_obj_code_get_name(const byte *code_info);
+qstr mp_obj_fun_get_name(mp_const_obj_t fun);
+qstr mp_obj_code_get_name(const byte *code_info);
 
 mp_obj_t mp_identity(mp_obj_t self);
 MP_DECLARE_CONST_FUN_OBJ(mp_identity_obj);
@@ -614,15 +637,15 @@ mp_obj_t mp_seq_count_obj(const mp_obj_t *items, mp_uint_t len, mp_obj_t value);
 mp_obj_t mp_seq_extract_slice(mp_uint_t len, const mp_obj_t *seq, mp_bound_slice_t *indexes);
 // Helper to clear stale pointers from allocated, but unused memory, to preclude GC problems
 #define mp_seq_clear(start, len, alloc_len, item_sz) memset((byte*)(start) + (len) * (item_sz), 0, ((alloc_len) - (len)) * (item_sz))
-#define mp_seq_replace_slice_no_grow(dest, dest_len, beg, end, slice, slice_len, item_t) \
-    /*printf("memcpy(%p, %p, %d)\n", dest + beg, slice, slice_len * sizeof(item_t));*/ \
-    memcpy(dest + beg, slice, slice_len * sizeof(item_t)); \
-    /*printf("memmove(%p, %p, %d)\n", dest + (beg + slice_len), dest + end, (dest_len - end) * sizeof(item_t));*/ \
-    memmove(dest + (beg + slice_len), dest + end, (dest_len - end) * sizeof(item_t));
+#define mp_seq_replace_slice_no_grow(dest, dest_len, beg, end, slice, slice_len, item_sz) \
+    /*printf("memcpy(%p, %p, %d)\n", dest + beg, slice, slice_len * (item_sz));*/ \
+    memcpy(((char*)dest) + (beg) * (item_sz), slice, slice_len * (item_sz)); \
+    /*printf("memmove(%p, %p, %d)\n", dest + (beg + slice_len), dest + end, (dest_len - end) * (item_sz));*/ \
+    memmove(((char*)dest) + (beg + slice_len) * (item_sz), ((char*)dest) + (end) * (item_sz), (dest_len - end) * (item_sz));
 
-#define mp_seq_replace_slice_grow_inplace(dest, dest_len, beg, end, slice, slice_len, len_adj, item_t) \
-    /*printf("memmove(%p, %p, %d)\n", dest + beg + len_adj, dest + beg, (dest_len - beg) * sizeof(item_t));*/ \
-    memmove(dest + beg + len_adj, dest + beg, (dest_len - beg) * sizeof(item_t)); \
-    memcpy(dest + beg, slice, slice_len * sizeof(item_t));
+#define mp_seq_replace_slice_grow_inplace(dest, dest_len, beg, end, slice, slice_len, len_adj, item_sz) \
+    /*printf("memmove(%p, %p, %d)\n", dest + beg + len_adj, dest + beg, (dest_len - beg) * (item_sz));*/ \
+    memmove(((char*)dest) + (beg + len_adj) * (item_sz), ((char*)dest) + (beg) * (item_sz), (dest_len - beg) * (item_sz)); \
+    memcpy(((char*)dest) + (beg) * (item_sz), slice, slice_len * (item_sz));
 
 #endif // __MICROPY_INCLUDED_PY_OBJ_H__

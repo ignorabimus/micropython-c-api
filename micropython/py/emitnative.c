@@ -564,8 +564,9 @@ STATIC void emit_native_start_pass(emit_t *emit, pass_kind_t pass, scope_t *scop
 
     // allocate memory for keeping track of the objects on the stack
     // XXX don't know stack size on entry, and it should be maximum over all scopes
+    // XXX this is such a big hack and really needs to be fixed
     if (emit->stack_info == NULL) {
-        emit->stack_info_alloc = scope->stack_size + 50;
+        emit->stack_info_alloc = scope->stack_size + 200;
         emit->stack_info = m_new(stack_info_t, emit->stack_info_alloc);
     }
 
@@ -1049,18 +1050,6 @@ STATIC void emit_get_stack_pointer_to_reg_for_push(emit_t *emit, mp_uint_t reg_d
     }
     ASM_MOV_LOCAL_ADDR_TO_REG(emit->as, emit->stack_start + emit->stack_size, reg_dest);
     adjust_stack(emit, n_push);
-}
-
-STATIC void emit_native_load_id(emit_t *emit, qstr qst) {
-    emit_common_load_id(emit, &EXPORT_FUN(method_table), emit->scope, qst);
-}
-
-STATIC void emit_native_store_id(emit_t *emit, qstr qst) {
-    emit_common_store_id(emit, &EXPORT_FUN(method_table), emit->scope, qst);
-}
-
-STATIC void emit_native_delete_id(emit_t *emit, qstr qst) {
-    emit_common_delete_id(emit, &EXPORT_FUN(method_table), emit->scope, qst);
 }
 
 STATIC void emit_native_label_assign(emit_t *emit, mp_uint_t l) {
@@ -1744,32 +1733,25 @@ STATIC void emit_native_jump_helper(emit_t *emit, bool pop) {
     need_stack_settled(emit);
 }
 
-STATIC void emit_native_pop_jump_if_true(emit_t *emit, mp_uint_t label) {
-    DEBUG_printf("pop_jump_if_true(label=" UINT_FMT ")\n", label);
+STATIC void emit_native_pop_jump_if(emit_t *emit, bool cond, mp_uint_t label) {
+    DEBUG_printf("pop_jump_if(cond=%u, label=" UINT_FMT ")\n", cond, label);
     emit_native_jump_helper(emit, true);
-    ASM_JUMP_IF_REG_NONZERO(emit->as, REG_RET, label);
+    if (cond) {
+        ASM_JUMP_IF_REG_NONZERO(emit->as, REG_RET, label);
+    } else {
+        ASM_JUMP_IF_REG_ZERO(emit->as, REG_RET, label);
+    }
     emit_post(emit);
 }
 
-STATIC void emit_native_pop_jump_if_false(emit_t *emit, mp_uint_t label) {
-    DEBUG_printf("pop_jump_if_false(label=" UINT_FMT ")\n", label);
-    emit_native_jump_helper(emit, true);
-    ASM_JUMP_IF_REG_ZERO(emit->as, REG_RET, label);
-    emit_post(emit);
-}
-
-STATIC void emit_native_jump_if_true_or_pop(emit_t *emit, mp_uint_t label) {
-    DEBUG_printf("jump_if_true_or_pop(label=" UINT_FMT ")\n", label);
+STATIC void emit_native_jump_if_or_pop(emit_t *emit, bool cond, mp_uint_t label) {
+    DEBUG_printf("jump_if_or_pop(cond=%u, label=" UINT_FMT ")\n", cond, label);
     emit_native_jump_helper(emit, false);
-    ASM_JUMP_IF_REG_NONZERO(emit->as, REG_RET, label);
-    adjust_stack(emit, -1);
-    emit_post(emit);
-}
-
-STATIC void emit_native_jump_if_false_or_pop(emit_t *emit, mp_uint_t label) {
-    DEBUG_printf("jump_if_false_or_pop(label=" UINT_FMT ")\n", label);
-    emit_native_jump_helper(emit, false);
-    ASM_JUMP_IF_REG_ZERO(emit->as, REG_RET, label);
+    if (cond) {
+        ASM_JUMP_IF_REG_NONZERO(emit->as, REG_RET, label);
+    } else {
+        ASM_JUMP_IF_REG_ZERO(emit->as, REG_RET, label);
+    }
     adjust_stack(emit, -1);
     emit_post(emit);
 }
@@ -2294,9 +2276,24 @@ const emit_method_table_t EXPORT_FUN(method_table) = {
     emit_native_adjust_stack_size,
     emit_native_set_source_line,
 
-    emit_native_load_id,
-    emit_native_store_id,
-    emit_native_delete_id,
+    {
+        emit_native_load_fast,
+        emit_native_load_deref,
+        emit_native_load_name,
+        emit_native_load_global,
+    },
+    {
+        emit_native_store_fast,
+        emit_native_store_deref,
+        emit_native_store_name,
+        emit_native_store_global,
+    },
+    {
+        emit_native_delete_fast,
+        emit_native_delete_deref,
+        emit_native_delete_name,
+        emit_native_delete_global,
+    },
 
     emit_native_label_assign,
     emit_native_import_name,
@@ -2307,24 +2304,12 @@ const emit_method_table_t EXPORT_FUN(method_table) = {
     emit_native_load_const_str,
     emit_native_load_const_obj,
     emit_native_load_null,
-    emit_native_load_fast,
-    emit_native_load_deref,
-    emit_native_load_name,
-    emit_native_load_global,
     emit_native_load_attr,
     emit_native_load_method,
     emit_native_load_build_class,
     emit_native_load_subscr,
-    emit_native_store_fast,
-    emit_native_store_deref,
-    emit_native_store_name,
-    emit_native_store_global,
     emit_native_store_attr,
     emit_native_store_subscr,
-    emit_native_delete_fast,
-    emit_native_delete_deref,
-    emit_native_delete_name,
-    emit_native_delete_global,
     emit_native_delete_attr,
     emit_native_delete_subscr,
     emit_native_dup_top,
@@ -2333,10 +2318,8 @@ const emit_method_table_t EXPORT_FUN(method_table) = {
     emit_native_rot_two,
     emit_native_rot_three,
     emit_native_jump,
-    emit_native_pop_jump_if_true,
-    emit_native_pop_jump_if_false,
-    emit_native_jump_if_true_or_pop,
-    emit_native_jump_if_false_or_pop,
+    emit_native_pop_jump_if,
+    emit_native_jump_if_or_pop,
     emit_native_break_loop,
     emit_native_continue_loop,
     emit_native_setup_with,

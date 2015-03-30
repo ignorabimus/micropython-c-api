@@ -47,11 +47,19 @@ struct _emit_t {
     mp_uint_t *label_offsets;
 };
 
-emit_t *emit_cpython_new(mp_uint_t max_num_labels) {
-    emit_t *emit = m_new(emit_t, 1);
+emit_t *emit_cpython_new(void) {
+    emit_t *emit = m_new0(emit_t, 1);
+    return emit;
+}
+
+void emit_cpython_set_max_num_labels(emit_t* emit, mp_uint_t max_num_labels) {
     emit->max_num_labels = max_num_labels;
     emit->label_offsets = m_new(mp_uint_t, max_num_labels);
-    return emit;
+}
+
+void emit_cpython_free(emit_t *emit) {
+    m_del(mp_uint_t, emit->label_offsets, emit->max_num_labels);
+    m_del_obj(emit_t, emit);
 }
 
 STATIC void emit_cpy_set_native_type(emit_t *emit, mp_uint_t op, mp_uint_t arg1, qstr arg2) {
@@ -69,6 +77,9 @@ STATIC void emit_cpy_start_pass(emit_t *emit, pass_kind_t pass, scope_t *scope) 
 }
 
 STATIC void emit_cpy_end_pass(emit_t *emit) {
+    if (emit->pass == MP_PASS_SCOPE) {
+        return;
+    }
     // check stack is back to zero size
     if (emit->stack_size != 0) {
         printf("ERROR: stack size not back to zero; got %d\n", emit->stack_size);
@@ -86,20 +97,11 @@ STATIC void emit_cpy_adjust_stack_size(emit_t *emit, mp_int_t delta) {
 STATIC void emit_cpy_set_source_line(emit_t *emit, mp_uint_t source_line) {
 }
 
-STATIC void emit_cpy_load_id(emit_t *emit, qstr qst) {
-    emit_common_load_id(emit, &emit_cpython_method_table, emit->scope, qst);
-}
-
-STATIC void emit_cpy_store_id(emit_t *emit, qstr qst) {
-    emit_common_store_id(emit, &emit_cpython_method_table, emit->scope, qst);
-}
-
-STATIC void emit_cpy_delete_id(emit_t *emit, qstr qst) {
-    emit_common_delete_id(emit, &emit_cpython_method_table, emit->scope, qst);
-}
-
 // TODO: module-polymorphic function (read: name clash if made global)
 static void emit_pre(emit_t *emit, int stack_size_delta, int bytecode_size) {
+    if (emit->pass == MP_PASS_SCOPE) {
+        return;
+    }
     emit->stack_size += stack_size_delta;
     if (emit->stack_size > emit->scope->stack_size) {
         emit->scope->stack_size = emit->stack_size;
@@ -117,6 +119,9 @@ static void emit_pre(emit_t *emit, int stack_size_delta, int bytecode_size) {
 
 STATIC void emit_cpy_label_assign(emit_t *emit, mp_uint_t l) {
     emit_pre(emit, 0, 0);
+    if (emit->pass == MP_PASS_SCOPE) {
+        return;
+    }
     assert(l < emit->max_num_labels);
     if (emit->pass < MP_PASS_EMIT) {
         // assign label offset
@@ -415,31 +420,25 @@ STATIC void emit_cpy_jump(emit_t *emit, mp_uint_t label) {
     }
 }
 
-STATIC void emit_cpy_pop_jump_if_true(emit_t *emit, mp_uint_t label) {
+STATIC void emit_cpy_pop_jump_if(emit_t *emit, bool cond, mp_uint_t label) {
     emit_pre(emit, -1, 3);
     if (emit->pass == MP_PASS_EMIT) {
-        printf("POP_JUMP_IF_TRUE " UINT_FMT "\n", emit->label_offsets[label]);
+        if (cond) {
+            printf("POP_JUMP_IF_TRUE " UINT_FMT "\n", emit->label_offsets[label]);
+        } else {
+            printf("POP_JUMP_IF_FALSE " UINT_FMT "\n", emit->label_offsets[label]);
+        }
     }
 }
 
-STATIC void emit_cpy_pop_jump_if_false(emit_t *emit, mp_uint_t label) {
+STATIC void emit_cpy_jump_if_or_pop(emit_t *emit, bool cond, mp_uint_t label) {
     emit_pre(emit, -1, 3);
     if (emit->pass == MP_PASS_EMIT) {
-        printf("POP_JUMP_IF_FALSE " UINT_FMT "\n", emit->label_offsets[label]);
-    }
-}
-
-STATIC void emit_cpy_jump_if_true_or_pop(emit_t *emit, mp_uint_t label) {
-    emit_pre(emit, -1, 3);
-    if (emit->pass == MP_PASS_EMIT) {
-        printf("JUMP_IF_TRUE_OR_POP " UINT_FMT "\n", emit->label_offsets[label]);
-    }
-}
-
-STATIC void emit_cpy_jump_if_false_or_pop(emit_t *emit, mp_uint_t label) {
-    emit_pre(emit, -1, 3);
-    if (emit->pass == MP_PASS_EMIT) {
-        printf("JUMP_IF_FALSE_OR_POP " UINT_FMT "\n", emit->label_offsets[label]);
+        if (cond) {
+            printf("JUMP_IF_TRUE_OR_POP " UINT_FMT "\n", emit->label_offsets[label]);
+        } else {
+            printf("JUMP_IF_FALSE_OR_POP " UINT_FMT "\n", emit->label_offsets[label]);
+        }
     }
 }
 
@@ -815,9 +814,24 @@ const emit_method_table_t emit_cpython_method_table = {
     emit_cpy_adjust_stack_size,
     emit_cpy_set_source_line,
 
-    emit_cpy_load_id,
-    emit_cpy_store_id,
-    emit_cpy_delete_id,
+    {
+        emit_cpy_load_fast,
+        emit_cpy_load_deref,
+        emit_cpy_load_name,
+        emit_cpy_load_global,
+    },
+    {
+        emit_cpy_store_fast,
+        emit_cpy_store_deref,
+        emit_cpy_store_name,
+        emit_cpy_store_global,
+    },
+    {
+        emit_cpy_delete_fast,
+        emit_cpy_delete_deref,
+        emit_cpy_delete_name,
+        emit_cpy_delete_global,
+    },
 
     emit_cpy_label_assign,
     emit_cpy_import_name,
@@ -828,24 +842,12 @@ const emit_method_table_t emit_cpython_method_table = {
     emit_cpy_load_const_str,
     emit_cpy_load_const_obj,
     emit_cpy_load_null,
-    emit_cpy_load_fast,
-    emit_cpy_load_deref,
-    emit_cpy_load_name,
-    emit_cpy_load_global,
     emit_cpy_load_attr,
     emit_cpy_load_method,
     emit_cpy_load_build_class,
     emit_cpy_load_subscr,
-    emit_cpy_store_fast,
-    emit_cpy_store_deref,
-    emit_cpy_store_name,
-    emit_cpy_store_global,
     emit_cpy_store_attr,
     emit_cpy_store_subscr,
-    emit_cpy_delete_fast,
-    emit_cpy_delete_deref,
-    emit_cpy_delete_name,
-    emit_cpy_delete_global,
     emit_cpy_delete_attr,
     emit_cpy_delete_subscr,
     emit_cpy_dup_top,
@@ -854,10 +856,8 @@ const emit_method_table_t emit_cpython_method_table = {
     emit_cpy_rot_two,
     emit_cpy_rot_three,
     emit_cpy_jump,
-    emit_cpy_pop_jump_if_true,
-    emit_cpy_pop_jump_if_false,
-    emit_cpy_jump_if_true_or_pop,
-    emit_cpy_jump_if_false_or_pop,
+    emit_cpy_pop_jump_if,
+    emit_cpy_jump_if_or_pop,
     emit_cpy_break_loop,
     emit_cpy_continue_loop,
     emit_cpy_setup_with,
