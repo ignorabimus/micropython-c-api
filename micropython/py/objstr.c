@@ -455,8 +455,9 @@ STATIC mp_obj_t str_join(mp_obj_t self_in, mp_obj_t arg) {
 }
 
 #define is_ws(c) ((c) == ' ' || (c) == '\t')
+enum {SPLIT = 0, KEEP = 1, SPLITLINES = 2};
 
-mp_obj_t mp_obj_str_split(mp_uint_t n_args, const mp_obj_t *args) {
+STATIC inline mp_obj_t str_split_internal(mp_uint_t n_args, const mp_obj_t *args, int type) {
     const mp_obj_type_t *self_type = mp_obj_get_type(args[0]);
     mp_int_t splits = -1;
     mp_obj_t sep = mp_const_none;
@@ -517,7 +518,13 @@ mp_obj_t mp_obj_str_split(mp_uint_t n_args, const mp_obj_t *args) {
                 }
                 s++;
             }
-            mp_obj_list_append(res, mp_obj_new_str_of_type(self_type, start, s - start));
+            mp_uint_t sub_len = s - start;
+            if (MP_LIKELY(!(sub_len == 0 && s == top && (type && SPLITLINES)))) {
+                if (start + sub_len != top && (type & KEEP)) {
+                    sub_len++;
+                }
+                mp_obj_list_append(res, mp_obj_new_str_of_type(self_type, start, sub_len));
+            }
             if (s >= top) {
                 break;
             }
@@ -530,6 +537,25 @@ mp_obj_t mp_obj_str_split(mp_uint_t n_args, const mp_obj_t *args) {
 
     return res;
 }
+
+mp_obj_t mp_obj_str_split(mp_uint_t n_args, const mp_obj_t *args) {
+    return str_split_internal(n_args, args, SPLIT);
+}
+
+#if MICROPY_PY_BUILTINS_STR_SPLITLINES
+STATIC mp_obj_t str_splitlines(mp_uint_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_keepends, MP_ARG_BOOL, {.u_bool = false} },
+    };
+
+    // parse args
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    mp_obj_t new_args[2] = {pos_args[0], MP_OBJ_NEW_QSTR(MP_QSTR__backslash_n)};
+    return str_split_internal(2, new_args, SPLITLINES | (args[0].u_bool ? KEEP : 0));
+}
+#endif
 
 STATIC mp_obj_t str_rsplit(mp_uint_t n_args, const mp_obj_t *args) {
     if (n_args < 3) {
@@ -763,7 +789,7 @@ STATIC mp_obj_t str_rstrip(mp_uint_t n_args, const mp_obj_t *args) {
 
 // Takes an int arg, but only parses unsigned numbers, and only changes
 // *num if at least one digit was parsed.
-static int str_to_int(const char *str, int *num) {
+STATIC int str_to_int(const char *str, int *num) {
     const char *s = str;
     if ('0' <= *s && *s <= '9') {
         *num = 0;
@@ -776,19 +802,19 @@ static int str_to_int(const char *str, int *num) {
     return s - str;
 }
 
-static bool isalignment(char ch) {
+STATIC bool isalignment(char ch) {
     return ch && strchr("<>=^", ch) != NULL;
 }
 
-static bool istype(char ch) {
+STATIC bool istype(char ch) {
     return ch && strchr("bcdeEfFgGnosxX%", ch) != NULL;
 }
 
-static bool arg_looks_integer(mp_obj_t arg) {
+STATIC bool arg_looks_integer(mp_obj_t arg) {
     return MP_OBJ_IS_TYPE(arg, &mp_type_bool) || MP_OBJ_IS_INT(arg);
 }
 
-static bool arg_looks_numeric(mp_obj_t arg) {
+STATIC bool arg_looks_numeric(mp_obj_t arg) {
     return arg_looks_integer(arg)
 #if MICROPY_PY_BUILTINS_FLOAT
         || MP_OBJ_IS_TYPE(arg, &mp_type_float)
@@ -796,7 +822,7 @@ static bool arg_looks_numeric(mp_obj_t arg) {
     ;
 }
 
-static mp_obj_t arg_as_int(mp_obj_t arg) {
+STATIC mp_obj_t arg_as_int(mp_obj_t arg) {
 #if MICROPY_PY_BUILTINS_FLOAT
     if (MP_OBJ_IS_TYPE(arg, &mp_type_float)) {
         return mp_obj_new_int_from_float(mp_obj_get_float(arg));
@@ -1763,6 +1789,9 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_index_obj, 2, 4, str_index);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rindex_obj, 2, 4, str_rindex);
 MP_DEFINE_CONST_FUN_OBJ_2(str_join_obj, str_join);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_split_obj, 1, 3, mp_obj_str_split);
+#if MICROPY_PY_BUILTINS_STR_SPLITLINES
+MP_DEFINE_CONST_FUN_OBJ_KW(str_splitlines_obj, 1, str_splitlines);
+#endif
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rsplit_obj, 1, 3, str_rsplit);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_startswith_obj, 2, 3, str_startswith);
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_endswith_obj, 2, 3, str_endswith);
@@ -1800,6 +1829,9 @@ STATIC const mp_map_elem_t str8_locals_dict_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_rindex), (mp_obj_t)&str_rindex_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_join), (mp_obj_t)&str_join_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_split), (mp_obj_t)&str_split_obj },
+    #if MICROPY_PY_BUILTINS_STR_SPLITLINES
+    { MP_OBJ_NEW_QSTR(MP_QSTR_splitlines), (mp_obj_t)&str_splitlines_obj },
+    #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_rsplit), (mp_obj_t)&str_rsplit_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_startswith), (mp_obj_t)&str_startswith_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_endswith), (mp_obj_t)&str_endswith_obj },

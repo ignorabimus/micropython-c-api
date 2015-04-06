@@ -49,6 +49,25 @@
 // values below.
 
 /*****************************************************************************/
+/* Object representation                                                     */
+
+// A Micro Python object is a machine word having the following form:
+//  - xxxx...xxx1 : a small int, bits 1 and above are the value
+//  - xxxx...xx10 : a qstr, bits 2 and above are the value
+//  - xxxx...xx00 : a pointer to an mp_obj_base_t (unless a fake object)
+#define MICROPY_OBJ_REPR_A (0)
+
+// A Micro Python object is a machine word having the following form:
+//  - xxxx...xx01 : a small int, bits 2 and above are the value
+//  - xxxx...xx11 : a qstr, bits 2 and above are the value
+//  - xxxx...xxx0 : a pointer to an mp_obj_base_t (unless a fake object)
+#define MICROPY_OBJ_REPR_B (1)
+
+#ifndef MICROPY_OBJ_REPR
+#define MICROPY_OBJ_REPR (MICROPY_OBJ_REPR_A)
+#endif
+
+/*****************************************************************************/
 /* Memory allocation policy                                                  */
 
 // Number of words allocated (in BSS) to the GC stack (minimum is 1)
@@ -123,6 +142,19 @@
 // (limit of 255 bytes in an identifier) should be enough for everyone
 #ifndef MICROPY_QSTR_BYTES_IN_LEN
 #define MICROPY_QSTR_BYTES_IN_LEN (1)
+#endif
+
+// Avoid using C stack when making Python function calls. C stack still
+// may be used if there's no free heap.
+#ifndef MICROPY_STACKLESS
+#define MICROPY_STACKLESS (0)
+#endif
+
+// Never use C stack when making Python function calls. This may break
+// testsuite as will subtly change which exception is thrown in case
+// of too deep recursion and other similar cases.
+#ifndef MICROPY_STACKLESS_STRICT
+#define MICROPY_STACKLESS_STRICT (0)
 #endif
 
 /*****************************************************************************/
@@ -373,6 +405,11 @@ typedef double mp_float_t;
 // Whether str object is proper unicode
 #ifndef MICROPY_PY_BUILTINS_STR_UNICODE
 #define MICROPY_PY_BUILTINS_STR_UNICODE (0)
+#endif
+
+// Whether str.splitlines() method provided
+#ifndef MICROPY_PY_BUILTINS_STR_SPLITLINES
+#define MICROPY_PY_BUILTINS_STR_SPLITLINES (0)
 #endif
 
 // Whether to support bytearray object

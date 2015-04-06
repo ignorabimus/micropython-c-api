@@ -85,6 +85,9 @@ Q(__truediv__)
 Q(__floordiv__)
 Q(__iadd__)
 Q(__isub__)
+Q(__invert__)
+Q(__neg__)
+Q(__pos__)
 #endif
 
 Q(micropython)
@@ -296,6 +299,11 @@ Q(find)
 Q(rfind)
 Q(rindex)
 Q(split)
+#if MICROPY_PY_BUILTINS_STR_SPLITLINES
+Q(splitlines)
+Q(keepends)
+Q(\n)
+#endif
 Q(rsplit)
 Q(startswith)
 Q(endswith)

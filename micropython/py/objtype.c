@@ -330,9 +330,11 @@ mp_obj_t instance_make_new(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, c
 const qstr mp_unary_op_method_name[] = {
     [MP_UNARY_OP_BOOL] = MP_QSTR___bool__,
     [MP_UNARY_OP_LEN] = MP_QSTR___len__,
-    //[MP_UNARY_OP_POSITIVE,
-    //[MP_UNARY_OP_NEGATIVE,
-    //[MP_UNARY_OP_INVERT,
+    #if MICROPY_PY_ALL_SPECIAL_METHODS
+    [MP_UNARY_OP_POSITIVE] = MP_QSTR___pos__,
+    [MP_UNARY_OP_NEGATIVE] = MP_QSTR___neg__,
+    [MP_UNARY_OP_INVERT] = MP_QSTR___invert__,
+    #endif
     [MP_UNARY_OP_NOT] = MP_QSTR_, // don't need to implement this, used to make sure array has full size
 };
 
@@ -1049,11 +1051,11 @@ STATIC mp_obj_t static_class_method_make_new(mp_obj_t self_in, mp_uint_t n_args,
 const mp_obj_type_t mp_type_staticmethod = {
     { &mp_type_type },
     .name = MP_QSTR_staticmethod,
-    .make_new = static_class_method_make_new
+    .make_new = static_class_method_make_new,
 };
 
 const mp_obj_type_t mp_type_classmethod = {
     { &mp_type_type },
     .name = MP_QSTR_classmethod,
-    .make_new = static_class_method_make_new
+    .make_new = static_class_method_make_new,
 };
