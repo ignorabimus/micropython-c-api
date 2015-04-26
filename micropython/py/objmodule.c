@@ -33,66 +33,65 @@
 #include "py/runtime.h"
 #include "py/builtin.h"
 
-STATIC void module_print(void (*print)(void *env, const char *fmt, ...), void *env, mp_obj_t self_in, mp_print_kind_t kind) {
+STATIC void module_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;
     mp_obj_module_t *self = self_in;
-    const char *name = qstr_str(self->name);
 
 #if MICROPY_PY___FILE__
     // If we store __file__ to imported modules then try to lookup this
     // symbol to give more information about the module.
     mp_map_elem_t *elem = mp_map_lookup(&self->globals->map, MP_OBJ_NEW_QSTR(MP_QSTR___file__), MP_MAP_LOOKUP);
     if (elem != NULL) {
-        print(env, "<module '%s' from '%s'>", name, mp_obj_str_get_str(elem->value));
+        mp_printf(print, "<module '%q' from '%s'>", self->name, mp_obj_str_get_str(elem->value));
         return;
     }
 #endif
 
-    print(env, "<module '%s'>", name);
+    mp_printf(print, "<module '%q'>", self->name);
 }
 
-STATIC void module_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+STATIC void module_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     mp_obj_module_t *self = self_in;
-    mp_map_elem_t *elem = mp_map_lookup(&self->globals->map, MP_OBJ_NEW_QSTR(attr), MP_MAP_LOOKUP);
-    if (elem != NULL) {
-        dest[0] = elem->value;
-    }
-}
-
-STATIC bool module_store_attr(mp_obj_t self_in, qstr attr, mp_obj_t value) {
-    mp_obj_module_t *self = self_in;
-    mp_obj_dict_t *dict = self->globals;
-    if (dict->map.is_fixed) {
-        #if MICROPY_CAN_OVERRIDE_BUILTINS
-        if (dict == &mp_module_builtins_globals) {
-            if (MP_STATE_VM(mp_module_builtins_override_dict) == NULL) {
-                MP_STATE_VM(mp_module_builtins_override_dict) = mp_obj_new_dict(1);
-            }
-            dict = MP_STATE_VM(mp_module_builtins_override_dict);
-        } else
-        #endif
-        {
-            // can't delete or store to fixed map
-            return false;
+    if (dest[0] == MP_OBJ_NULL) {
+        // load attribute
+        mp_map_elem_t *elem = mp_map_lookup(&self->globals->map, MP_OBJ_NEW_QSTR(attr), MP_MAP_LOOKUP);
+        if (elem != NULL) {
+            dest[0] = elem->value;
         }
-    }
-    if (value == MP_OBJ_NULL) {
-        // delete attribute
-        mp_obj_dict_delete(dict, MP_OBJ_NEW_QSTR(attr));
     } else {
-        // store attribute
-        // TODO CPython allows STORE_ATTR to a module, but is this the correct implementation?
-        mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(attr), value);
+        // delete/store attribute
+        mp_obj_dict_t *dict = self->globals;
+        if (dict->map.is_fixed) {
+            #if MICROPY_CAN_OVERRIDE_BUILTINS
+            if (dict == &mp_module_builtins_globals) {
+                if (MP_STATE_VM(mp_module_builtins_override_dict) == NULL) {
+                    MP_STATE_VM(mp_module_builtins_override_dict) = mp_obj_new_dict(1);
+                }
+                dict = MP_STATE_VM(mp_module_builtins_override_dict);
+            } else
+            #endif
+            {
+                // can't delete or store to fixed map
+                return;
+            }
+        }
+        if (dest[1] == MP_OBJ_NULL) {
+            // delete attribute
+            mp_obj_dict_delete(dict, MP_OBJ_NEW_QSTR(attr));
+        } else {
+            // store attribute
+            // TODO CPython allows STORE_ATTR to a module, but is this the correct implementation?
+            mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(attr), dest[1]);
+        }
+        dest[0] = MP_OBJ_NULL; // indicate success
     }
-    return true;
 }
 
 const mp_obj_type_t mp_type_module = {
     { &mp_type_type },
     .name = MP_QSTR_module,
     .print = module_print,
-    .load_attr = module_load_attr,
-    .store_attr = module_store_attr,
+    .attr = module_attr,
 };
 
 mp_obj_t mp_obj_new_module(qstr module_name) {

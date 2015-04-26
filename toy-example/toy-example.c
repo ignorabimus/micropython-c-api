@@ -15,9 +15,9 @@ int execute_from_lexer(mp_lexer_t *lex, mp_parse_input_kind_t input_kind, bool i
 int handle_uncaught_exception(mp_obj_t exc);
 int do_str(const char *str);
 
-mp_obj_t callback_print(mp_obj_t arg)
+mp_obj_t callback_print(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args)
 {
-	const char *str = mp_obj_str_get_str(arg);
+	const char *str = mp_obj_str_get_str(args[0]);
 	printf("c_print: %s\n", str);
 
 	return mp_const_none;
@@ -53,7 +53,7 @@ int main(void) {
 	mp_init();
 
 	// call a C function from Python
-	mp_store_name(qstr_from_str("c_print"), mp_obj_new_fun_native(1, callback_print));
+	mp_store_name(qstr_from_str("c_print"), mp_obj_new_fun_native(0, 1, 0, MP_OBJ_NULL, MP_OBJ_NULL, callback_print));
 	do_str("c_print('Hello world!')\n");
 
 	// call a Python function from C

@@ -268,7 +268,6 @@ STATIC mp_parse_node_t fold_constants(compiler_t *comp, mp_parse_node_t pn, mp_m
                         arg0 -= arg1;
                     }
                     if (MP_SMALL_INT_FITS(arg0)) {
-                        //printf("%ld + %ld\n", arg0, arg1);
                         pn = mp_parse_node_new_leaf(MP_PARSE_NODE_SMALL_INT, arg0);
                     }
                 }
@@ -325,7 +324,7 @@ STATIC mp_parse_node_t fold_constants(compiler_t *comp, mp_parse_node_t pn, mp_m
                 } else if (MP_PARSE_NODE_IS_SMALL_INT(pns->nodes[0]) && MP_PARSE_NODE_IS_NULL(pns->nodes[1]) && !MP_PARSE_NODE_IS_NULL(pns->nodes[2])) {
                     // int ** x
                     // can overflow; enabled only to compare with CPython
-                    mp_parse_node_struct_t* pns2 = (mp_parse_node_struct_t*)pns->nodes[2];
+                    mp_parse_node_struct_t *pns2 = (mp_parse_node_struct_t*)pns->nodes[2];
                     if (MP_PARSE_NODE_IS_SMALL_INT(pns2->nodes[0])) {
                         int power = MP_PARSE_NODE_LEAF_SMALL_INT(pns2->nodes[0]);
                         if (power >= 0) {
@@ -342,7 +341,7 @@ STATIC mp_parse_node_t fold_constants(compiler_t *comp, mp_parse_node_t pn, mp_m
                 } else if (MP_PARSE_NODE_IS_ID(pns->nodes[0]) && MP_PARSE_NODE_IS_STRUCT_KIND(pns->nodes[1], PN_trailer_period) && MP_PARSE_NODE_IS_NULL(pns->nodes[2])) {
                     // id.id
                     // look it up in constant table, see if it can be replaced with an integer
-                    mp_parse_node_struct_t* pns1 = (mp_parse_node_struct_t*)pns->nodes[1];
+                    mp_parse_node_struct_t *pns1 = (mp_parse_node_struct_t*)pns->nodes[1];
                     assert(MP_PARSE_NODE_IS_ID(pns1->nodes[0]));
                     qstr q_base = MP_PARSE_NODE_LEAF_ARG(pns->nodes[0]);
                     qstr q_attr = MP_PARSE_NODE_LEAF_ARG(pns1->nodes[0]);
@@ -400,7 +399,9 @@ STATIC scope_t *scope_new_and_link(compiler_t *comp, scope_kind_t kind, mp_parse
     return scope;
 }
 
-STATIC void apply_to_single_or_list(compiler_t *comp, mp_parse_node_t pn, pn_kind_t pn_list_kind, void (*f)(compiler_t*, mp_parse_node_t)) {
+typedef void (*apply_list_fun_t)(compiler_t *comp, mp_parse_node_t pn);
+
+STATIC void apply_to_single_or_list(compiler_t *comp, mp_parse_node_t pn, pn_kind_t pn_list_kind, apply_list_fun_t f) {
     if (MP_PARSE_NODE_IS_STRUCT_KIND(pn, pn_list_kind)) {
         mp_parse_node_struct_t *pns = (mp_parse_node_struct_t*)pn;
         int num_nodes = MP_PARSE_NODE_STRUCT_NUM_NODES(pns);
@@ -2225,8 +2226,8 @@ STATIC void compile_expr_stmt(compiler_t *comp, mp_parse_node_struct_t *pns) {
                 && MP_PARSE_NODE_STRUCT_NUM_NODES((mp_parse_node_struct_t*)pns1->nodes[0]) == 2
                 && MP_PARSE_NODE_STRUCT_NUM_NODES((mp_parse_node_struct_t*)pns->nodes[0]) == 2) {
                 // optimisation for a, b = c, d; to match CPython's optimisation
-                mp_parse_node_struct_t* pns10 = (mp_parse_node_struct_t*)pns1->nodes[0];
-                mp_parse_node_struct_t* pns0 = (mp_parse_node_struct_t*)pns->nodes[0];
+                mp_parse_node_struct_t *pns10 = (mp_parse_node_struct_t*)pns1->nodes[0];
+                mp_parse_node_struct_t *pns0 = (mp_parse_node_struct_t*)pns->nodes[0];
                 if (MP_PARSE_NODE_IS_STRUCT_KIND(pns0->nodes[0], PN_star_expr)
                     || MP_PARSE_NODE_IS_STRUCT_KIND(pns0->nodes[1], PN_star_expr)) {
                     // can't optimise when it's a star expression on the lhs
@@ -2243,8 +2244,8 @@ STATIC void compile_expr_stmt(compiler_t *comp, mp_parse_node_struct_t *pns) {
                 && MP_PARSE_NODE_STRUCT_NUM_NODES((mp_parse_node_struct_t*)pns1->nodes[0]) == 3
                 && MP_PARSE_NODE_STRUCT_NUM_NODES((mp_parse_node_struct_t*)pns->nodes[0]) == 3) {
                 // optimisation for a, b, c = d, e, f; to match CPython's optimisation
-                mp_parse_node_struct_t* pns10 = (mp_parse_node_struct_t*)pns1->nodes[0];
-                mp_parse_node_struct_t* pns0 = (mp_parse_node_struct_t*)pns->nodes[0];
+                mp_parse_node_struct_t *pns10 = (mp_parse_node_struct_t*)pns1->nodes[0];
+                mp_parse_node_struct_t *pns0 = (mp_parse_node_struct_t*)pns->nodes[0];
                 if (MP_PARSE_NODE_IS_STRUCT_KIND(pns0->nodes[0], PN_star_expr)
                     || MP_PARSE_NODE_IS_STRUCT_KIND(pns0->nodes[1], PN_star_expr)
                     || MP_PARSE_NODE_IS_STRUCT_KIND(pns0->nodes[2], PN_star_expr)) {
@@ -3193,7 +3194,7 @@ STATIC void check_for_doc_string(compiler_t *comp, mp_parse_node_t pn) {
 
     // check the first statement for a doc string
     if (MP_PARSE_NODE_IS_STRUCT_KIND(pn, PN_expr_stmt)) {
-        mp_parse_node_struct_t* pns = (mp_parse_node_struct_t*)pn;
+        mp_parse_node_struct_t *pns = (mp_parse_node_struct_t*)pn;
         if ((MP_PARSE_NODE_IS_LEAF(pns->nodes[0])
                 && MP_PARSE_NODE_LEAF_KIND(pns->nodes[0]) == MP_PARSE_NODE_STRING)
             || MP_PARSE_NODE_IS_STRUCT_KIND(pns->nodes[0], PN_string)) {
@@ -3430,13 +3431,6 @@ STATIC void compile_scope_inline_asm(compiler_t *comp, scope_t *scope, pass_kind
     mp_parse_node_t pn_body = pns->nodes[3]; // body
     mp_parse_node_t *nodes;
     int num = mp_parse_node_extract_list(&pn_body, PN_suite_block_stmts, &nodes);
-
-    /*
-    if (comp->pass == MP_PASS_EMIT) {
-        //printf("----\n");
-        scope_print_info(scope);
-    }
-    */
 
     for (int i = 0; i < num; i++) {
         assert(MP_PARSE_NODE_IS_STRUCT(nodes[i]));
@@ -3770,22 +3764,22 @@ mp_obj_t mp_compile(mp_parse_node_t pn, qstr source_file, uint emit_opt, bool is
                 case MP_EMIT_OPT_VIPER:
 #if MICROPY_EMIT_X64
                     if (emit_native == NULL) {
-                        emit_native = emit_native_x64_new(max_num_labels);
+                        emit_native = emit_native_x64_new(&comp->compile_error, max_num_labels);
                     }
                     comp->emit_method_table = &emit_native_x64_method_table;
 #elif MICROPY_EMIT_X86
                     if (emit_native == NULL) {
-                        emit_native = emit_native_x86_new(max_num_labels);
+                        emit_native = emit_native_x86_new(&comp->compile_error, max_num_labels);
                     }
                     comp->emit_method_table = &emit_native_x86_method_table;
 #elif MICROPY_EMIT_THUMB
                     if (emit_native == NULL) {
-                        emit_native = emit_native_thumb_new(max_num_labels);
+                        emit_native = emit_native_thumb_new(&comp->compile_error, max_num_labels);
                     }
                     comp->emit_method_table = &emit_native_thumb_method_table;
 #elif MICROPY_EMIT_ARM
                     if (emit_native == NULL) {
-                        emit_native = emit_native_arm_new(max_num_labels);
+                        emit_native = emit_native_arm_new(&comp->compile_error, max_num_labels);
                     }
                     comp->emit_method_table = &emit_native_arm_method_table;
 #endif

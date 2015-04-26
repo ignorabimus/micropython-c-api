@@ -69,6 +69,7 @@ Q(__str__)
 #if MICROPY_PY_DESCRIPTORS
 Q(__get__)
 Q(__set__)
+Q(__delete__)
 #endif
 Q(__getattr__)
 Q(__del__)
@@ -143,6 +144,9 @@ Q(SystemExit)
 Q(TypeError)
 Q(UnboundLocalError)
 Q(ValueError)
+#if MICROPY_EMIT_NATIVE
+Q(ViperTypeError)
+#endif
 Q(ZeroDivisionError)
 #if MICROPY_PY_BUILTINS_STR_UNICODE
 Q(UnicodeError)

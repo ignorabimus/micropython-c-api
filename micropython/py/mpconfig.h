@@ -186,6 +186,11 @@
 #define MICROPY_EMIT_INLINE_THUMB (0)
 #endif
 
+// Whether to enable float support in the Thumb2 inline assembler
+#ifndef MICROPY_EMIT_INLINE_THUMB_FLOAT
+#define MICROPY_EMIT_INLINE_THUMB_FLOAT (1)
+#endif
+
 // Whether to emit ARM native code
 #ifndef MICROPY_EMIT_ARM
 #define MICROPY_EMIT_ARM (0)
@@ -459,9 +464,19 @@ typedef double mp_float_t;
 #define MICROPY_PY_BUILTINS_COMPILE (0)
 #endif
 
+// Whether to support enumerate function(type)
+#ifndef MICROPY_PY_BUILTINS_ENUMERATE
+#define MICROPY_PY_BUILTINS_ENUMERATE (1)
+#endif
+
 // Whether to support the Python 2 execfile function
 #ifndef MICROPY_PY_BUILTINS_EXECFILE
 #define MICROPY_PY_BUILTINS_EXECFILE (0)
+#endif
+
+// Whether to support reversed function(type)
+#ifndef MICROPY_PY_BUILTINS_REVERSED
+#define MICROPY_PY_BUILTINS_REVERSED (1)
 #endif
 
 // Whether to set __file__ for imported modules
@@ -681,15 +696,20 @@ typedef double mp_float_t;
 #define MICROPY_MAKE_POINTER_CALLABLE(p) (p)
 #endif
 
-// If these MP_PLAT_* macros are overridden then the memory allocated by them
+// If these MP_PLAT_*_EXEC macros are overridden then the memory allocated by them
 // must be somehow reachable for marking by the GC, since the native code
 // generators store pointers to GC managed memory in the code.
 #ifndef MP_PLAT_ALLOC_EXEC
-#define MP_PLAT_ALLOC_EXEC(min_size, ptr, size) do { *ptr = m_new(byte, min_size); *size = min_size; } while(0)
+#define MP_PLAT_ALLOC_EXEC(min_size, ptr, size) do { *ptr = m_new(byte, min_size); *size = min_size; } while (0)
 #endif
 
 #ifndef MP_PLAT_FREE_EXEC
 #define MP_PLAT_FREE_EXEC(ptr, size) m_del(byte, ptr, size)
+#endif
+
+// This macro is used to do all output (except when MICROPY_PY_IO is defined)
+#ifndef MP_PLAT_PRINT_STRN
+#define MP_PLAT_PRINT_STRN(str, len) printf("%.*s", (int)len, str)
 #endif
 
 #ifndef MP_SSIZE_MAX

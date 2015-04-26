@@ -76,26 +76,26 @@ STATIC mp_int_t array_get_buffer(mp_obj_t o_in, mp_buffer_info_t *bufinfo, mp_ui
 // array
 
 #if MICROPY_PY_BUILTINS_BYTEARRAY || MICROPY_PY_ARRAY
-STATIC void array_print(void (*print)(void *env, const char *fmt, ...), void *env, mp_obj_t o_in, mp_print_kind_t kind) {
+STATIC void array_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
     (void)kind;
     mp_obj_array_t *o = o_in;
     if (o->typecode == BYTEARRAY_TYPECODE) {
-        print(env, "bytearray(b");
-        mp_str_print_quoted(print, env, o->items, o->len, true);
+        mp_print_str(print, "bytearray(b");
+        mp_str_print_quoted(print, o->items, o->len, true);
     } else {
-        print(env, "array('%c'", o->typecode);
+        mp_printf(print, "array('%c'", o->typecode);
         if (o->len > 0) {
-            print(env, ", [");
+            mp_print_str(print, ", [");
             for (mp_uint_t i = 0; i < o->len; i++) {
                 if (i > 0) {
-                    print(env, ", ");
+                    mp_print_str(print, ", ");
                 }
-                mp_obj_print_helper(print, env, mp_binary_get_val_array(o->typecode, o->items, i), PRINT_REPR);
+                mp_obj_print_helper(print, mp_binary_get_val_array(o->typecode, o->items, i), PRINT_REPR);
             }
-            print(env, "]");
+            mp_print_str(print, "]");
         }
     }
-    print(env, ")");
+    mp_print_str(print, ")");
 }
 #endif
 
@@ -369,17 +369,31 @@ STATIC mp_obj_t array_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t value
             if (value != MP_OBJ_SENTINEL) {
                 #if MICROPY_PY_ARRAY_SLICE_ASSIGN
                 // Assign
-                if (!MP_OBJ_IS_TYPE(value, &mp_type_array) && !MP_OBJ_IS_TYPE(value, &mp_type_bytearray)) {
-                    mp_not_implemented("array required on right side");
-                }
-                mp_obj_array_t *src_slice = value;
+                mp_uint_t src_len;
+                void *src_items;
                 int item_sz = mp_binary_get_size('@', o->typecode, NULL);
-                if (item_sz != mp_binary_get_size('@', src_slice->typecode, NULL)) {
-                    mp_not_implemented("arrays should be compatible");
+                if (MP_OBJ_IS_TYPE(value, &mp_type_array) || MP_OBJ_IS_TYPE(value, &mp_type_bytearray)) {
+                    mp_obj_array_t *src_slice = value;
+                    if (item_sz != mp_binary_get_size('@', src_slice->typecode, NULL)) {
+                    compat_error:
+                        mp_not_implemented("lhs and rhs should be compatible");
+                    }
+                    src_len = src_slice->len;
+                    src_items = src_slice->items;
+                } else if (MP_OBJ_IS_TYPE(value, &mp_type_bytes)) {
+                    if (item_sz != 1) {
+                        goto compat_error;
+                    }
+                    mp_buffer_info_t bufinfo;
+                    mp_get_buffer_raise(value, &bufinfo, MP_BUFFER_READ);
+                    src_len = bufinfo.len;
+                    src_items = bufinfo.buf;
+                } else {
+                    mp_not_implemented("array/bytes required on right side");
                 }
 
                 // TODO: check src/dst compat
-                mp_int_t len_adj = src_slice->len - (slice.stop - slice.start);
+                mp_int_t len_adj = src_len - (slice.stop - slice.start);
                 if (len_adj > 0) {
                     if (len_adj > o->free) {
                         // TODO: alloc policy; at the moment we go conservative
@@ -387,10 +401,10 @@ STATIC mp_obj_t array_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t value
                         o->free = 0;
                     }
                     mp_seq_replace_slice_grow_inplace(o->items, o->len,
-                        slice.start, slice.stop, src_slice->items, src_slice->len, len_adj, item_sz);
+                        slice.start, slice.stop, src_items, src_len, len_adj, item_sz);
                 } else {
                     mp_seq_replace_slice_no_grow(o->items, o->len,
-                        slice.start, slice.stop, src_slice->items, src_slice->len, item_sz);
+                        slice.start, slice.stop, src_items, src_len, item_sz);
                     // Clear "freed" elements at the end of list
                     // TODO: This is actually only needed for typecode=='O'
                     mp_seq_clear(o->items, o->len + len_adj, o->len, item_sz);

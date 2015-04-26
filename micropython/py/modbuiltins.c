@@ -35,14 +35,13 @@
 #include "py/runtime.h"
 #include "py/builtin.h"
 #include "py/stream.h"
-#include "py/pfenv.h"
 
 #if MICROPY_PY_BUILTINS_FLOAT
 #include <math.h>
 #endif
 
 #if MICROPY_PY_IO
-extern mp_uint_t mp_sys_stdout_obj; // type is irrelevant, just need pointer
+extern struct _mp_dummy_t mp_sys_stdout_obj; // type is irrelevant, just need pointer
 #endif
 
 // args[0] is function from class body
@@ -352,9 +351,12 @@ STATIC mp_obj_t mp_builtin_ord(mp_obj_t o_in) {
     mp_uint_t len;
     const char *str = mp_obj_str_get_data(o_in, &len);
     #if MICROPY_PY_BUILTINS_STR_UNICODE
-    len = unichar_charlen(str, len);
-    if (len == 1) {
-        if (MP_OBJ_IS_STR(o_in) && UTF8_IS_NONASCII(*str)) {
+    if (MP_OBJ_IS_STR(o_in)) {
+        len = unichar_charlen(str, len);
+        if (len == 1) {
+            if (!UTF8_IS_NONASCII(*str)) {
+                goto return_first_byte;
+            }
             mp_int_t ord = *str++ & 0x7F;
             for (mp_int_t mask = 0x40; ord & mask; mask >>= 1) {
                 ord &= ~mask;
@@ -363,8 +365,12 @@ STATIC mp_obj_t mp_builtin_ord(mp_obj_t o_in) {
                 ord = (ord << 6) | (*str++ & 0x3F);
             }
             return mp_obj_new_int(ord);
-        } else {
-            return mp_obj_new_int(((const byte*)str)[0]);
+        }
+    } else {
+        // a bytes object
+        if (len == 1) {
+        return_first_byte:
+            return MP_OBJ_NEW_SMALL_INT(((const byte*)str)[0]);
         }
     }
     #else
@@ -413,28 +419,26 @@ STATIC mp_obj_t mp_builtin_print(mp_uint_t n_args, const mp_obj_t *args, mp_map_
         stream_obj = file_elem->value;
     }
 
-    pfenv_t pfenv;
-    pfenv.data = stream_obj;
-    pfenv.print_strn = (void (*)(void *, const char *, mp_uint_t))mp_stream_write;
+    mp_print_t print = {stream_obj, (mp_print_strn_t)mp_stream_write};
     #endif
     for (mp_uint_t i = 0; i < n_args; i++) {
         if (i > 0) {
             #if MICROPY_PY_IO
             mp_stream_write(stream_obj, sep_data, sep_len);
             #else
-            printf("%.*s", (int)sep_len, sep_data);
+            mp_print_strn(&mp_plat_print, sep_data, sep_len, 0, 0, 0);
             #endif
         }
         #if MICROPY_PY_IO
-        mp_obj_print_helper((void (*)(void *env, const char *fmt, ...))pfenv_printf, &pfenv, args[i], PRINT_STR);
+        mp_obj_print_helper(&print, args[i], PRINT_STR);
         #else
-        mp_obj_print(args[i], PRINT_STR);
+        mp_obj_print_helper(&mp_plat_print, args[i], PRINT_STR);
         #endif
     }
     #if MICROPY_PY_IO
     mp_stream_write(stream_obj, end_data, end_len);
     #else
-    printf("%.*s", (int)end_len, end_data);
+    mp_print_strn(&mp_plat_print, end_data, end_len, 0, 0, 0);
     #endif
     return mp_const_none;
 }
@@ -443,14 +447,11 @@ MP_DEFINE_CONST_FUN_OBJ_KW(mp_builtin_print_obj, 0, mp_builtin_print);
 STATIC mp_obj_t mp_builtin___repl_print__(mp_obj_t o) {
     if (o != mp_const_none) {
         #if MICROPY_PY_IO
-        pfenv_t pfenv;
-        pfenv.data = &mp_sys_stdout_obj;
-        pfenv.print_strn = (void (*)(void *, const char *, mp_uint_t))mp_stream_write;
-        mp_obj_print_helper((void (*)(void *env, const char *fmt, ...))pfenv_printf, &pfenv, o, PRINT_REPR);
-        mp_stream_write(&mp_sys_stdout_obj, "\n", 1);
+        mp_obj_print_helper(&mp_sys_stdout_print, o, PRINT_REPR);
+        mp_print_str(&mp_sys_stdout_print, "\n");
         #else
-        mp_obj_print(o, PRINT_REPR);
-        printf("\n");
+        mp_obj_print_helper(&mp_plat_print, o, PRINT_REPR);
+        mp_print_str(&mp_plat_print, "\n");
         #endif
     }
     return mp_const_none;
@@ -459,8 +460,9 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin___repl_print___obj, mp_builtin___repl_print
 
 STATIC mp_obj_t mp_builtin_repr(mp_obj_t o_in) {
     vstr_t vstr;
-    vstr_init(&vstr, 16);
-    mp_obj_print_helper((void (*)(void *env, const char *fmt, ...))vstr_printf, &vstr, o_in, PRINT_REPR);
+    mp_print_t print;
+    vstr_init_print(&vstr, 16, &print);
+    mp_obj_print_helper(&print, o_in, PRINT_REPR);
     return mp_obj_new_str_from_vstr(&mp_type_str, &vstr);
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_repr_obj, mp_builtin_repr);
@@ -594,7 +596,9 @@ STATIC const mp_map_elem_t mp_module_builtins_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_complex), (mp_obj_t)&mp_type_complex },
 #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_dict), (mp_obj_t)&mp_type_dict },
+    #if MICROPY_PY_BUILTINS_ENUMERATE
     { MP_OBJ_NEW_QSTR(MP_QSTR_enumerate), (mp_obj_t)&mp_type_enumerate },
+    #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_filter), (mp_obj_t)&mp_type_filter },
 #if MICROPY_PY_BUILTINS_FLOAT
     { MP_OBJ_NEW_QSTR(MP_QSTR_float), (mp_obj_t)&mp_type_float },
@@ -613,7 +617,9 @@ STATIC const mp_map_elem_t mp_module_builtins_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_property), (mp_obj_t)&mp_type_property },
 #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_range), (mp_obj_t)&mp_type_range },
+    #if MICROPY_PY_BUILTINS_REVERSED
     { MP_OBJ_NEW_QSTR(MP_QSTR_reversed), (mp_obj_t)&mp_type_reversed },
+    #endif
 #if MICROPY_PY_BUILTINS_SET
     { MP_OBJ_NEW_QSTR(MP_QSTR_set), (mp_obj_t)&mp_type_set },
 #endif
@@ -697,6 +703,9 @@ STATIC const mp_map_elem_t mp_module_builtins_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_UnicodeError), (mp_obj_t)&mp_type_UnicodeError },
     #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_ValueError), (mp_obj_t)&mp_type_ValueError },
+    #if MICROPY_EMIT_NATIVE
+    { MP_OBJ_NEW_QSTR(MP_QSTR_ViperTypeError), (mp_obj_t)&mp_type_ViperTypeError },
+    #endif
     { MP_OBJ_NEW_QSTR(MP_QSTR_ZeroDivisionError), (mp_obj_t)&mp_type_ZeroDivisionError },
     // Somehow CPython managed to have OverflowError not inherit from ValueError ;-/
     // TODO: For MICROPY_CPYTHON_COMPAT==0 use ValueError to avoid exc proliferation

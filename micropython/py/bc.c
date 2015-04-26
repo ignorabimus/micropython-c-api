@@ -61,8 +61,8 @@ STATIC NORETURN void fun_pos_args_mismatch(mp_obj_fun_bc_t *f, mp_uint_t expecte
         "function takes %d positional arguments but %d were given", expected, given));
 #elif MICROPY_ERROR_REPORTING == MICROPY_ERROR_REPORTING_DETAILED
     nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError,
-        "%s() takes %d positional arguments but %d were given",
-        qstr_str(mp_obj_fun_get_name(f)), expected, given));
+        "%q() takes %d positional arguments but %d were given",
+        mp_obj_fun_get_name(f), expected, given));
 #endif
 }
 
@@ -78,8 +78,13 @@ STATIC void dump_args(const mp_obj_t *a, mp_uint_t sz) {
 #define dump_args(...) (void)0
 #endif
 
-// code_state should have ->ip filled in (pointing past code info block),
-// as well as ->n_state.
+// On entry code_state should be allocated somewhere (stack/heap) and
+// contain the following valid entries:
+//    - code_state->code_info should be the offset in bytes from the start of
+//      the bytecode chunk to the start of the code-info within the bytecode
+//    - code_state->ip should contain the offset in bytes from the start of
+//      the bytecode chunk to the start of the prelude within the bytecode
+//    - code_state->n_state should be set to the state size (locals plus stack)
 void mp_setup_code_state(mp_code_state *code_state, mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
     // This function is pretty complicated.  It's main aim is to be efficient in speed and RAM
     // usage for the common case of positional only args.
@@ -89,7 +94,7 @@ void mp_setup_code_state(mp_code_state *code_state, mp_obj_t self_in, mp_uint_t 
     #if MICROPY_STACKLESS
     code_state->prev = NULL;
     #endif
-    code_state->code_info = self->bytecode;
+    code_state->code_info = self->bytecode + (mp_uint_t)code_state->code_info;
     code_state->sp = &code_state->state[0] - 1;
     code_state->exc_sp = (mp_exc_stack_t*)(code_state->state + n_state) - 1;
 
@@ -161,7 +166,7 @@ void mp_setup_code_state(mp_code_state *code_state, mp_obj_t self_in, mp_uint_t 
                 if (wanted_arg_name == arg_names[j]) {
                     if (code_state->state[n_state - 1 - j] != MP_OBJ_NULL) {
                         nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError,
-                            "function got multiple values for argument '%s'", qstr_str(MP_OBJ_QSTR_VALUE(wanted_arg_name))));
+                            "function got multiple values for argument '%q'", MP_OBJ_QSTR_VALUE(wanted_arg_name)));
                     }
                     code_state->state[n_state - 1 - j] = kwargs[2 * i + 1];
                     goto continue2;
@@ -210,7 +215,7 @@ continue2:;
                     code_state->state[n_state - 1 - self->n_pos_args - i] = elem->value;
                 } else {
                     nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError,
-                        "function missing required keyword argument '%s'", qstr_str(MP_OBJ_QSTR_VALUE(arg_names[self->n_pos_args + i]))));
+                        "function missing required keyword argument '%q'", MP_OBJ_QSTR_VALUE(arg_names[self->n_pos_args + i])));
                 }
             }
         }
@@ -227,10 +232,11 @@ continue2:;
     }
 
     // bytecode prelude: initialise closed over variables
-    const byte *ip = code_state->ip;
-    for (mp_uint_t n_local = *ip++; n_local > 0; n_local--) {
-        mp_uint_t local_num = *ip++;
-        code_state->state[n_state - 1 - local_num] = mp_obj_new_cell(code_state->state[n_state - 1 - local_num]);
+    const byte *ip = self->bytecode + (mp_uint_t)code_state->ip;
+    mp_uint_t local_num;
+    while ((local_num = *ip++) != 255) {
+        code_state->state[n_state - 1 - local_num] =
+            mp_obj_new_cell(code_state->state[n_state - 1 - local_num]);
     }
 
     // now that we skipped over the prelude, set the ip for the VM

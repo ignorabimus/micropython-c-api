@@ -79,14 +79,14 @@ typedef struct _mp_obj_range_t {
     mp_int_t step;
 } mp_obj_range_t;
 
-STATIC void range_print(void (*print)(void *env, const char *fmt, ...), void *env, mp_obj_t self_in, mp_print_kind_t kind) {
+STATIC void range_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;
     mp_obj_range_t *self = self_in;
-    print(env, "range(%d, %d", self->start, self->stop);
+    mp_printf(print, "range(%d, %d", self->start, self->stop);
     if (self->step == 1) {
-        print(env, ")");
+        mp_print_str(print, ")");
     } else {
-        print(env, ", %d)", self->step);
+        mp_printf(print, ", %d)", self->step);
     }
 }
 
@@ -168,7 +168,11 @@ STATIC mp_obj_t range_getiter(mp_obj_t o_in) {
 
 
 #if MICROPY_PY_BUILTINS_RANGE_ATTRS
-STATIC void range_load_attr(mp_obj_t o_in, qstr attr, mp_obj_t *dest) {
+STATIC void range_attr(mp_obj_t o_in, qstr attr, mp_obj_t *dest) {
+    if (dest[0] != MP_OBJ_NULL) {
+        // not load attribute
+        return;
+    }
     mp_obj_range_t *o = o_in;
     if (attr == MP_QSTR_start) {
         dest[0] = mp_obj_new_int(o->start);
@@ -189,6 +193,6 @@ const mp_obj_type_t mp_type_range = {
     .subscr = range_subscr,
     .getiter = range_getiter,
 #if MICROPY_PY_BUILTINS_RANGE_ATTRS
-    .load_attr = range_load_attr,
+    .attr = range_attr,
 #endif
 };

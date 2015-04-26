@@ -48,36 +48,36 @@ typedef struct _mp_obj_complex_t {
     mp_float_t imag;
 } mp_obj_complex_t;
 
-STATIC void complex_print(void (*print)(void *env, const char *fmt, ...), void *env, mp_obj_t o_in, mp_print_kind_t kind) {
+STATIC void complex_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
     (void)kind;
     mp_obj_complex_t *o = o_in;
 #if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_FLOAT
     char buf[16];
     if (o->real == 0) {
         mp_format_float(o->imag, buf, sizeof(buf), 'g', 7, '\0');
-        print(env, "%sj", buf);
+        mp_printf(print, "%sj", buf);
     } else {
         mp_format_float(o->real, buf, sizeof(buf), 'g', 7, '\0');
-        print(env, "(%s", buf);
+        mp_printf(print, "(%s", buf);
         if (o->imag >= 0) {
-            print(env, "+");
+            mp_print_str(print, "+");
         }
         mp_format_float(o->imag, buf, sizeof(buf), 'g', 7, '\0');
-        print(env, "%sj)", buf);
+        mp_printf(print, "%sj)", buf);
     }
 #else
     char buf[32];
     if (o->real == 0) {
         sprintf(buf, "%.16g", (double)o->imag);
-        print(env, "%sj", buf);
+        mp_printf(print, "%sj", buf);
     } else {
         sprintf(buf, "%.16g", (double)o->real);
-        print(env, "(%s", buf);
+        mp_printf(print, "(%s", buf);
         if (o->imag >= 0) {
-            print(env, "+");
+            mp_print_str(print, "+");
         }
         sprintf(buf, "%.16g", (double)o->imag);
-        print(env, "%sj)", buf);
+        mp_printf(print, "%sj)", buf);
     }
 #endif
 }
@@ -141,7 +141,11 @@ STATIC mp_obj_t complex_binary_op(mp_uint_t op, mp_obj_t lhs_in, mp_obj_t rhs_in
     return mp_obj_complex_binary_op(op, lhs->real, lhs->imag, rhs_in);
 }
 
-STATIC void complex_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+STATIC void complex_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+    if (dest[0] != MP_OBJ_NULL) {
+        // not load attribute
+        return;
+    }
     mp_obj_complex_t *self = self_in;
     if (attr == MP_QSTR_real) {
         dest[0] = mp_obj_new_float(self->real);
@@ -157,7 +161,7 @@ const mp_obj_type_t mp_type_complex = {
     .make_new = complex_make_new,
     .unary_op = complex_unary_op,
     .binary_op = complex_binary_op,
-    .load_attr = complex_load_attr,
+    .attr = complex_attr,
 };
 
 mp_obj_t mp_obj_new_complex(mp_float_t real, mp_float_t imag) {

@@ -90,28 +90,28 @@ mp_obj_t mp_alloc_emergency_exception_buf(mp_obj_t size_in) {
 // definition module-private so far, have it here.
 const mp_obj_exception_t mp_const_GeneratorExit_obj = {{&mp_type_GeneratorExit}, 0, 0, MP_OBJ_NULL, mp_const_empty_tuple};
 
-STATIC void mp_obj_exception_print(void (*print)(void *env, const char *fmt, ...), void *env, mp_obj_t o_in, mp_print_kind_t kind) {
+STATIC void mp_obj_exception_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
     mp_obj_exception_t *o = o_in;
     mp_print_kind_t k = kind & ~PRINT_EXC_SUBCLASS;
     bool is_subclass = kind & PRINT_EXC_SUBCLASS;
     if (!is_subclass && (k == PRINT_REPR || k == PRINT_EXC)) {
-        print(env, "%s", qstr_str(o->base.type->name));
+        mp_print_str(print, qstr_str(o->base.type->name));
     }
 
     if (k == PRINT_EXC) {
-        print(env, ": ");
+        mp_print_str(print, ": ");
     }
 
     if (k == PRINT_STR || k == PRINT_EXC) {
         if (o->args == NULL || o->args->len == 0) {
-            print(env, "");
+            mp_print_str(print, "");
             return;
         } else if (o->args->len == 1) {
-            mp_obj_print_helper(print, env, o->args->items[0], PRINT_STR);
+            mp_obj_print_helper(print, o->args->items[0], PRINT_STR);
             return;
         }
     }
-    mp_obj_tuple_print(print, env, o->args, kind);
+    mp_obj_tuple_print(print, o->args, kind);
 }
 
 mp_obj_t mp_obj_exception_make_new(mp_obj_t type_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
@@ -140,7 +140,11 @@ mp_obj_t mp_obj_exception_get_value(mp_obj_t self_in) {
     }
 }
 
-STATIC void exception_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+STATIC void exception_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+    if (dest[0] != MP_OBJ_NULL) {
+        // not load attribute
+        return;
+    }
     mp_obj_exception_t *self = self_in;
     if (attr == MP_QSTR_args) {
         dest[0] = self->args;
@@ -168,7 +172,7 @@ const mp_obj_type_t mp_type_BaseException = {
     .name = MP_QSTR_BaseException,
     .print = mp_obj_exception_print,
     .make_new = mp_obj_exception_make_new,
-    .load_attr = exception_load_attr,
+    .attr = exception_attr,
     .locals_dict = (mp_obj_t)&exc_locals_dict,
 };
 
@@ -181,7 +185,7 @@ const mp_obj_type_t mp_type_ ## exc_name = { \
     .name = MP_QSTR_ ## exc_name, \
     .print = mp_obj_exception_print, \
     .make_new = mp_obj_exception_make_new, \
-    .load_attr = exception_load_attr, \
+    .attr = exception_attr, \
     .bases_tuple = (mp_obj_t)&mp_type_ ## base_name ## _base_tuple, \
 };
 
@@ -248,6 +252,10 @@ MP_DEFINE_EXCEPTION(Exception, BaseException)
       */
   //MP_DEFINE_EXCEPTION(SystemError, Exception)
   MP_DEFINE_EXCEPTION(TypeError, Exception)
+#if MICROPY_EMIT_NATIVE
+    MP_DEFINE_EXCEPTION_BASE(TypeError)
+    MP_DEFINE_EXCEPTION(ViperTypeError, TypeError)
+#endif
   MP_DEFINE_EXCEPTION(ValueError, Exception)
 #if MICROPY_PY_BUILTINS_STR_UNICODE
     MP_DEFINE_EXCEPTION_BASE(ValueError)
@@ -317,13 +325,17 @@ mp_obj_t mp_obj_new_exception_msg_varg(const mp_obj_type_t *exc_type, const char
             uint max_len = MP_STATE_VM(mp_emergency_exception_buf) + mp_emergency_exception_buf_size
                          - str_data;
 
+            vstr_t vstr;
+            vstr_init_fixed_buf(&vstr, max_len, (char *)str_data);
+
             va_list ap;
             va_start(ap, fmt);
-            str->len = vsnprintf((char *)str_data, max_len, fmt, ap);
+            vstr_vprintf(&vstr, fmt, ap);
             va_end(ap);
 
             str->base.type = &mp_type_str;
             str->hash = qstr_compute_hash(str_data, str->len);
+            str->len = vstr.len;
             str->data = str_data;
 
             o->args = tuple;

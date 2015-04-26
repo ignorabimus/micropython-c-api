@@ -112,7 +112,7 @@ mp_vm_return_kind_t mp_execute_bytecode(mp_code_state *code_state, volatile mp_o
         TRACE(ip); \
         MARK_EXC_IP_GLOBAL(); \
         goto *entry_table[*ip++]; \
-    } while(0)
+    } while (0)
     #define DISPATCH_WITH_PEND_EXC_CHECK() goto pending_exception_check
     #define ENTRY(op) entry_##op
     #define ENTRY_DEFAULT entry_default
@@ -127,14 +127,14 @@ mp_vm_return_kind_t mp_execute_bytecode(mp_code_state *code_state, volatile mp_o
     // sees that it's possible for us to jump from the dispatch loop to the exception
     // handler.  Without this, the code may have a different stack layout in the dispatch
     // loop and the exception handler, leading to very obscure bugs.
-    #define RAISE(o) do { nlr_pop(); nlr.ret_val = o; goto exception_handler; } while(0)
+    #define RAISE(o) do { nlr_pop(); nlr.ret_val = o; goto exception_handler; } while (0)
 
 #if MICROPY_STACKLESS
 run_code_state: ;
 #endif
     // Pointers which are constant for particular invocation of mp_execute_bytecode()
-    mp_obj_t */*const*/ fastn = &code_state->state[code_state->n_state - 1];
-    mp_exc_stack_t */*const*/ exc_stack = (mp_exc_stack_t*)(code_state->state + code_state->n_state);
+    mp_obj_t * /*const*/ fastn = &code_state->state[code_state->n_state - 1];
+    mp_exc_stack_t * /*const*/ exc_stack = (mp_exc_stack_t*)(code_state->state + code_state->n_state);
 
     // variables that are visible to the exception handler (declared volatile)
     volatile bool currently_in_except_block = MP_TAGPTR_TAG0(code_state->exc_sp); // 0 or 1, to detect nested exceptions
@@ -315,7 +315,7 @@ dispatch_loop:
                     MARK_EXC_IP_SELECTIVE();
                     DECODE_QSTR;
                     mp_obj_t top = TOP();
-                    if (mp_obj_get_type(top)->load_attr == mp_obj_instance_load_attr) {
+                    if (mp_obj_get_type(top)->attr == mp_obj_instance_attr) {
                         mp_obj_instance_t *self = top;
                         mp_uint_t x = *ip;
                         mp_obj_t key = MP_OBJ_NEW_QSTR(qst);
@@ -405,7 +405,7 @@ dispatch_loop:
                     MARK_EXC_IP_SELECTIVE();
                     DECODE_QSTR;
                     mp_obj_t top = TOP();
-                    if (mp_obj_get_type(top)->store_attr == mp_obj_instance_store_attr && sp[-1] != MP_OBJ_NULL) {
+                    if (mp_obj_get_type(top)->attr == mp_obj_instance_attr && sp[-1] != MP_OBJ_NULL) {
                         mp_obj_instance_t *self = top;
                         mp_uint_t x = *ip;
                         mp_obj_t key = MP_OBJ_NEW_QSTR(qst);

@@ -33,7 +33,6 @@
 #include "py/objlist.h"
 #include "py/runtime0.h"
 #include "py/runtime.h"
-#include "py/pfenv.h"
 
 #if MICROPY_PY_BUILTINS_STR_UNICODE
 
@@ -42,7 +41,7 @@ STATIC mp_obj_t mp_obj_new_str_iterator(mp_obj_t str);
 /******************************************************************************/
 /* str                                                                        */
 
-STATIC void uni_print_quoted(void (*print)(void *env, const char *fmt, ...), void *env, const byte *str_data, uint str_len) {
+STATIC void uni_print_quoted(const mp_print_t *print, const byte *str_data, uint str_len) {
     // this escapes characters, but it will be very slow to print (calling print many times)
     bool has_single_quote = false;
     bool has_double_quote = false;
@@ -57,47 +56,47 @@ STATIC void uni_print_quoted(void (*print)(void *env, const char *fmt, ...), voi
     if (has_single_quote && !has_double_quote) {
         quote_char = '"';
     }
-    print(env, "%c", quote_char);
+    mp_printf(print, "%c", quote_char);
     const byte *s = str_data, *top = str_data + str_len;
     while (s < top) {
         unichar ch;
         ch = utf8_get_char(s);
         s = utf8_next_char(s);
         if (ch == quote_char) {
-            print(env, "\\%c", quote_char);
+            mp_printf(print, "\\%c", quote_char);
         } else if (ch == '\\') {
-            print(env, "\\\\");
+            mp_print_str(print, "\\\\");
         } else if (32 <= ch && ch <= 126) {
-            print(env, "%c", ch);
+            mp_printf(print, "%c", ch);
         } else if (ch == '\n') {
-            print(env, "\\n");
+            mp_print_str(print, "\\n");
         } else if (ch == '\r') {
-            print(env, "\\r");
+            mp_print_str(print, "\\r");
         } else if (ch == '\t') {
-            print(env, "\\t");
+            mp_print_str(print, "\\t");
         } else if (ch < 0x100) {
-            print(env, "\\x%02x", ch);
+            mp_printf(print, "\\x%02x", ch);
         } else if (ch < 0x10000) {
-            print(env, "\\u%04x", ch);
+            mp_printf(print, "\\u%04x", ch);
         } else {
-            print(env, "\\U%08x", ch);
+            mp_printf(print, "\\U%08x", ch);
         }
     }
-    print(env, "%c", quote_char);
+    mp_printf(print, "%c", quote_char);
 }
 
-STATIC void uni_print(void (*print)(void *env, const char *fmt, ...), void *env, mp_obj_t self_in, mp_print_kind_t kind) {
+STATIC void uni_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     GET_STR_DATA_LEN(self_in, str_data, str_len);
     #if MICROPY_PY_UJSON
     if (kind == PRINT_JSON) {
-        mp_str_print_json(print, env, str_data, str_len);
+        mp_str_print_json(print, str_data, str_len);
         return;
     }
     #endif
     if (kind == PRINT_STR) {
-        print(env, "%.*s", str_len, str_data);
+        mp_printf(print, "%.*s", str_len, str_data);
     } else {
-        uni_print_quoted(print, env, str_data, str_len);
+        uni_print_quoted(print, str_data, str_len);
     }
 }
 
@@ -170,6 +169,7 @@ const byte *str_index_to_ptr(const mp_obj_type_t *type, const byte *self_data, m
 
 STATIC mp_obj_t str_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     mp_obj_type_t *type = mp_obj_get_type(self_in);
+    assert(type == &mp_type_str);
     GET_STR_DATA_LEN(self_in, self_data, self_len);
     if (value == MP_OBJ_SENTINEL) {
         // load
@@ -182,22 +182,6 @@ STATIC mp_obj_t str_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
                     "only slices with step=1 (aka None) are supported"));
             }
 
-            if (type == &mp_type_bytes) {
-                mp_int_t start = 0, stop = self_len;
-                if (ostart != mp_const_none) {
-                    start = MP_OBJ_SMALL_INT_VALUE(ostart);
-                    if (start < 0) {
-                        start = self_len + start;
-                    }
-                }
-                if (ostop != mp_const_none) {
-                    stop = MP_OBJ_SMALL_INT_VALUE(ostop);
-                    if (stop < 0) {
-                        stop = self_len + stop;
-                    }
-                }
-                return mp_obj_new_str_of_type(type, self_data + start, stop - start);
-            }
             const byte *pstart, *pstop;
             if (ostart != mp_const_none) {
                 pstart = str_index_to_ptr(type, self_data, self_len, ostart, true);
@@ -217,10 +201,6 @@ STATIC mp_obj_t str_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
             return mp_obj_new_str_of_type(type, (const byte *)pstart, pstop - pstart);
         }
 #endif
-        if (type == &mp_type_bytes) {
-            uint index_val = mp_get_index(type, self_len, index, false);
-            return MP_OBJ_NEW_SMALL_INT(self_data[index_val]);
-        }
         const byte *s = str_index_to_ptr(type, self_data, self_len, index, false);
         int len = 1;
         if (UTF8_IS_NONASCII(*s)) {
