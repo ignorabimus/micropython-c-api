@@ -305,8 +305,26 @@ void mp_emit_bc_start_pass(emit_t *emit, pass_kind_t pass, scope_t *scope) {
     // we store them as full word-sized objects for efficient access in mp_setup_code_state
     // this is the start of the prelude and is guaranteed to be aligned on a word boundary
     {
+        // For a given argument position (indexed by i) we need to find the
+        // corresponding id_info which is a parameter, as it has the correct
+        // qstr name to use as the argument name.  Note that it's not a simple
+        // 1-1 mapping (ie i!=j in general) because of possible closed-over
+        // variables.  In the case that the argument i has no corresponding
+        // parameter we use "*" as its name (since no argument can ever be named
+        // "*").  We could use a blank qstr but "*" is better for debugging.
+        // Note: there is some wasted RAM here for the case of storing a qstr
+        // for each closed-over variable, and maybe there is a better way to do
+        // it, but that would require changes to mp_setup_code_state.
         for (int i = 0; i < scope->num_pos_args + scope->num_kwonly_args; i++) {
-            emit_write_bytecode_prealigned_ptr(emit, MP_OBJ_NEW_QSTR(scope->id_info[i].qst));
+            qstr qst = MP_QSTR__star_;
+            for (int j = 0; j < scope->id_info_len; ++j) {
+                id_info_t *id = &scope->id_info[j];
+                if ((id->flags & ID_FLAG_IS_PARAM) && id->local_num == i) {
+                    qst = id->qst;
+                    break;
+                }
+            }
+            emit_write_bytecode_prealigned_ptr(emit, MP_OBJ_NEW_QSTR(qst));
         }
     }
 
@@ -454,7 +472,7 @@ void mp_emit_bc_load_const_tok(emit_t *emit, mp_token_kind_t tok) {
         case MP_TOKEN_KW_NONE: emit_write_bytecode_byte(emit, MP_BC_LOAD_CONST_NONE); break;
         case MP_TOKEN_KW_TRUE: emit_write_bytecode_byte(emit, MP_BC_LOAD_CONST_TRUE); break;
         no_other_choice:
-        case MP_TOKEN_ELLIPSIS: emit_write_bytecode_byte(emit, MP_BC_LOAD_CONST_ELLIPSIS); break;
+        case MP_TOKEN_ELLIPSIS: emit_write_bytecode_byte_ptr(emit, MP_BC_LOAD_CONST_OBJ, (void*)&mp_const_ellipsis_obj); break;
         default: assert(0); goto no_other_choice; // to help flow control analysis
     }
 }
@@ -680,12 +698,15 @@ void mp_emit_bc_unwind_jump(emit_t *emit, mp_uint_t label, mp_uint_t except_dept
 }
 
 void mp_emit_bc_setup_with(emit_t *emit, mp_uint_t label) {
-    emit_bc_pre(emit, 7);
+    // TODO We can probably optimise the amount of needed stack space, since
+    // we don't actually need 4 slots during the entire with block, only in
+    // the cleanup handler in certain cases.  It needs some thinking.
+    emit_bc_pre(emit, 4);
     emit_write_bytecode_byte_unsigned_label(emit, MP_BC_SETUP_WITH, label);
 }
 
 void mp_emit_bc_with_cleanup(emit_t *emit) {
-    emit_bc_pre(emit, -7);
+    emit_bc_pre(emit, -4);
     emit_write_bytecode_byte(emit, MP_BC_WITH_CLEANUP);
 }
 

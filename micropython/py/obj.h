@@ -449,7 +449,8 @@ extern const struct _mp_obj_bool_t mp_const_false_obj;
 extern const struct _mp_obj_bool_t mp_const_true_obj;
 extern const struct _mp_obj_str_t mp_const_empty_bytes_obj;
 extern const struct _mp_obj_tuple_t mp_const_empty_tuple_obj;
-extern const struct _mp_obj_ellipsis_t mp_const_ellipsis_obj;
+extern const struct _mp_obj_singleton_t mp_const_ellipsis_obj;
+extern const struct _mp_obj_singleton_t mp_const_notimplemented_obj;
 extern const struct _mp_obj_exception_t mp_const_MemoryError_obj;
 extern const struct _mp_obj_exception_t mp_const_GeneratorExit_obj;
 
@@ -507,10 +508,10 @@ void mp_obj_print_exception(const mp_print_t *print, mp_obj_t exc);
 
 bool mp_obj_is_true(mp_obj_t arg);
 bool mp_obj_is_callable(mp_obj_t o_in);
-mp_int_t mp_obj_hash(mp_obj_t o_in);
 bool mp_obj_equal(mp_obj_t o1, mp_obj_t o2);
 
 mp_int_t mp_obj_get_int(mp_const_obj_t arg);
+mp_int_t mp_obj_get_int_truncated(mp_const_obj_t arg);
 bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value);
 #if MICROPY_PY_BUILTINS_FLOAT
 mp_float_t mp_obj_get_float(mp_obj_t self_in);
@@ -524,6 +525,7 @@ mp_obj_t mp_obj_id(mp_obj_t o_in);
 mp_obj_t mp_obj_len(mp_obj_t o_in);
 mp_obj_t mp_obj_len_maybe(mp_obj_t o_in); // may return MP_OBJ_NULL
 mp_obj_t mp_obj_subscr(mp_obj_t base, mp_obj_t index, mp_obj_t val);
+mp_obj_t mp_generic_unary_op(mp_uint_t op, mp_obj_t o_in);
 
 // bool
 // TODO make lower case when it has proven itself

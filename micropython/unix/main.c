@@ -43,7 +43,7 @@
 #include "py/repl.h"
 #include "py/gc.h"
 #include "py/stackctrl.h"
-#include "genhdr/py-version.h"
+#include "genhdr/mpversion.h"
 #include "input.h"
 
 // Command line options, with their defaults
@@ -73,6 +73,13 @@ STATIC void sighandler(int signum) {
 }
 #endif
 
+STATIC void stderr_print_strn(void *env, const char *str, mp_uint_t len) {
+    (void)env;
+    fwrite(str, len, 1, stderr);
+}
+
+const mp_print_t mp_stderr_print = {NULL, stderr_print_strn};
+
 #define FORCED_EXIT (0x100)
 // If exc is SystemExit, return value where FORCED_EXIT bit set,
 // and lower 8 bits are SystemExit value. For all other exceptions,
@@ -90,7 +97,7 @@ int handle_uncaught_exception(mp_obj_t exc) {
     }
 
     // Report all other exceptions
-    mp_obj_print_exception(&mp_plat_print, exc);
+    mp_obj_print_exception(&mp_stderr_print, exc);
     return 1;
 }
 
@@ -356,6 +363,13 @@ int main(int argc, char **argv) {
     }
 
     mp_obj_list_init(mp_sys_argv, 0);
+
+    #if defined(MICROPY_UNIX_COVERAGE)
+    {
+        MP_DECLARE_CONST_FUN_OBJ(extra_coverage_obj);
+        mp_store_global(QSTR_FROM_STR_STATIC("extra_coverage"), (mp_obj_t)&extra_coverage_obj);
+    }
+    #endif
 
     // Here is some example code to create a class and instance of that class.
     // First is the Python, then the C code.

@@ -35,6 +35,7 @@
 #include "py/objstr.h"
 #include "py/runtime0.h"
 #include "py/runtime.h"
+#include "py/binary.h"
 
 #if MICROPY_PY_BUILTINS_FLOAT
 #include <math.h>
@@ -258,10 +259,6 @@ char *mp_obj_int_formatted(char **buf, mp_uint_t *buf_size, mp_uint_t *fmt_size,
 
 #if MICROPY_LONGINT_IMPL == MICROPY_LONGINT_IMPL_NONE
 
-mp_int_t mp_obj_int_hash(mp_obj_t self_in) {
-    return MP_OBJ_SMALL_INT_VALUE(self_in);
-}
-
 bool mp_obj_int_is_positive(mp_obj_t self_in) {
     return mp_obj_get_int(self_in) >= 0;
 }
@@ -398,12 +395,10 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(int_from_bytes_fun_obj, 2, 3, int_fro
 STATIC MP_DEFINE_CONST_CLASSMETHOD_OBJ(int_from_bytes_obj, (const mp_obj_t)&int_from_bytes_fun_obj);
 
 STATIC mp_obj_t int_to_bytes(mp_uint_t n_args, const mp_obj_t *args) {
-    // TODO: Support long ints
     // TODO: Support byteorder param (assumes 'little')
     // TODO: Support signed param (assumes signed=False)
     (void)n_args;
 
-    mp_int_t val = mp_obj_int_get_checked(args[0]);
     mp_uint_t len = MP_OBJ_SMALL_INT_VALUE(args[1]);
 
     vstr_t vstr;
@@ -411,13 +406,14 @@ STATIC mp_obj_t int_to_bytes(mp_uint_t n_args, const mp_obj_t *args) {
     byte *data = (byte*)vstr.buf;
     memset(data, 0, len);
 
-    if (MP_ENDIANNESS_LITTLE) {
-        memcpy(data, &val, len < sizeof(mp_int_t) ? len : sizeof(mp_int_t));
-    } else {
-        while (len--) {
-            *data++ = val;
-            val >>= 8;
-        }
+    #if MICROPY_LONGINT_IMPL != MICROPY_LONGINT_IMPL_NONE
+    if (!MP_OBJ_IS_SMALL_INT(args[0])) {
+        mp_obj_int_to_bytes_impl(args[0], false, len, data);
+    } else
+    #endif
+    {
+        mp_int_t val = MP_OBJ_SMALL_INT_VALUE(args[0]);
+        mp_binary_set_int(MIN((size_t)len, sizeof(val)), false, data, val);
     }
 
     return mp_obj_new_str_from_vstr(&mp_type_bytes, &vstr);

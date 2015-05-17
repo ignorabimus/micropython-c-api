@@ -55,6 +55,7 @@ PY_O_BASENAME = \
 	map.o \
 	obj.o \
 	objarray.o \
+	objattrtuple.o \
 	objbool.o \
 	objboundmeth.o \
 	objcell.o \
@@ -81,6 +82,7 @@ PY_O_BASENAME = \
 	objrange.o \
 	objreversed.o \
 	objset.o \
+	objsingleton.o \
 	objslice.o \
 	objstr.o \
 	objstrunicode.o \
@@ -117,6 +119,7 @@ PY_O_BASENAME = \
 	../extmod/moduheapq.o \
 	../extmod/moduhashlib.o \
 	../extmod/modubinascii.o \
+	../extmod/modmachine.o \
 
 # prepend the build destination prefix to the py object files
 PY_O = $(addprefix $(PY_BUILD)/, $(PY_O_BASENAME))
@@ -125,9 +128,8 @@ PY_O = $(addprefix $(PY_BUILD)/, $(PY_O_BASENAME))
 FORCE:
 .PHONY: FORCE
 
-$(HEADER_BUILD)/py-version.h: FORCE | $(HEADER_BUILD)
-	$(Q)$(PY_SRC)/py-version.sh > $@.tmp
-	$(Q)if [ -f "$@" ] && cmp -s $@ $@.tmp; then rm $@.tmp; else echo "Generating $@"; mv $@.tmp $@; fi
+$(HEADER_BUILD)/mpversion.h: FORCE | $(HEADER_BUILD)
+	$(Q)$(PYTHON) $(PY_SRC)/makeversionhdr.py $@
 
 # qstr data
 

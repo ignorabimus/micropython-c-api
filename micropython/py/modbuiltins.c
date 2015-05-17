@@ -272,8 +272,8 @@ STATIC mp_obj_t mp_builtin_divmod(mp_obj_t o1_in, mp_obj_t o2_in) {
 MP_DEFINE_CONST_FUN_OBJ_2(mp_builtin_divmod_obj, mp_builtin_divmod);
 
 STATIC mp_obj_t mp_builtin_hash(mp_obj_t o_in) {
-    // TODO hash will generally overflow small integer; can we safely truncate it?
-    return mp_obj_new_int(mp_obj_hash(o_in));
+    // result is guaranteed to be a (small) int
+    return mp_unary_op(MP_UNARY_OP_HASH, o_in);
 }
 MP_DEFINE_CONST_FUN_OBJ_1(mp_builtin_hash_obj, mp_builtin_hash);
 
@@ -634,6 +634,9 @@ STATIC const mp_map_elem_t mp_module_builtins_globals_table[] = {
 
     // built-in objects
     { MP_OBJ_NEW_QSTR(MP_QSTR_Ellipsis), (mp_obj_t)&mp_const_ellipsis_obj },
+    #if MICROPY_PY_BUILTINS_NOTIMPLEMENTED
+    { MP_OBJ_NEW_QSTR(MP_QSTR_NotImplemented), (mp_obj_t)&mp_const_notimplemented_obj },
+    #endif
 
     // built-in user functions
     { MP_OBJ_NEW_QSTR(MP_QSTR_abs), (mp_obj_t)&mp_builtin_abs_obj },

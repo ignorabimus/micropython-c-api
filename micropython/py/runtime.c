@@ -32,6 +32,7 @@
 #include "py/nlr.h"
 #include "py/parsenum.h"
 #include "py/compile.h"
+#include "py/objstr.h"
 #include "py/objtuple.h"
 #include "py/objlist.h"
 #include "py/objmodule.h"
@@ -200,6 +201,8 @@ mp_obj_t mp_unary_op(mp_uint_t op, mp_obj_t arg) {
         switch (op) {
             case MP_UNARY_OP_BOOL:
                 return MP_BOOL(val != 0);
+            case MP_UNARY_OP_HASH:
+                return arg;
             case MP_UNARY_OP_POSITIVE:
                 return arg;
             case MP_UNARY_OP_NEGATIVE:
@@ -215,6 +218,10 @@ mp_obj_t mp_unary_op(mp_uint_t op, mp_obj_t arg) {
                 assert(0);
                 return arg;
         }
+    } else if (op == MP_UNARY_OP_HASH && MP_OBJ_IS_STR_OR_BYTES(arg)) {
+        // fast path for hashing str/bytes
+        GET_STR_HASH(arg, h);
+        return MP_OBJ_NEW_SMALL_INT(h);
     } else {
         mp_obj_type_t *type = mp_obj_get_type(arg);
         if (type->unary_op != NULL) {
@@ -1081,7 +1088,7 @@ mp_vm_return_kind_t mp_resume(mp_obj_t self_in, mp_obj_t send_value, mp_obj_t th
 
     if (type->iternext != NULL && send_value == mp_const_none) {
         mp_obj_t ret = type->iternext(self_in);
-        if (ret != MP_OBJ_NULL) {
+        if (ret != MP_OBJ_STOP_ITERATION) {
             *ret_val = ret;
             return MP_VM_RETURN_YIELD;
         } else {
@@ -1113,6 +1120,8 @@ mp_vm_return_kind_t mp_resume(mp_obj_t self_in, mp_obj_t send_value, mp_obj_t th
         if (mp_obj_is_subclass_fast(mp_obj_get_type(throw_value), &mp_type_GeneratorExit)) {
             mp_load_method_maybe(self_in, MP_QSTR_close, dest);
             if (dest[0] != MP_OBJ_NULL) {
+                // TODO: Exceptions raised in close() are not propagated,
+                // printed to sys.stderr
                 *ret_val = mp_call_method_n_kw(0, 0, dest);
                 // We assume one can't "yield" from close()
                 return MP_VM_RETURN_NORMAL;

@@ -24,6 +24,9 @@
  * THE SOFTWARE.
  */
 
+// Debugging help - use printf() easily
+#include <stdio.h>
+
 // options to control how Micro Python is built
 
 #define MICROPY_ALLOC_PATH_MAX      (PATH_MAX)
@@ -35,8 +38,11 @@
 #endif
 #if !defined(MICROPY_EMIT_THUMB) && defined(__thumb2__)
     #define MICROPY_EMIT_THUMB      (1)
+    #define MICROPY_MAKE_POINTER_CALLABLE(p) ((void*)((mp_uint_t)(p) | 1))
 #endif
-#if !defined(MICROPY_EMIT_ARM) && defined(__arm__)
+// Some compilers define __thumb2__ and __arm__ at the same time, let
+// autodetected thumb2 emitter have priority.
+#if !defined(MICROPY_EMIT_ARM) && defined(__arm__) && !defined(__thumb2__)
     #define MICROPY_EMIT_ARM        (1)
 #endif
 #define MICROPY_COMP_MODULE_CONST   (1)
@@ -64,6 +70,7 @@
 #define MICROPY_PY_BUILTINS_MEMORYVIEW (1)
 #define MICROPY_PY_BUILTINS_FROZENSET (1)
 #define MICROPY_PY_BUILTINS_COMPILE (1)
+#define MICROPY_PY_BUILTINS_NOTIMPLEMENTED (1)
 #define MICROPY_PY_MICROPYTHON_MEM_INFO (1)
 #define MICROPY_PY_ALL_SPECIAL_METHODS (1)
 #define MICROPY_PY_ARRAY_SLICE_ASSIGN (1)
@@ -71,6 +78,7 @@
 #define MICROPY_PY_SYS_PLATFORM     "linux"
 #define MICROPY_PY_SYS_MAXSIZE      (1)
 #define MICROPY_PY_SYS_STDFILES     (1)
+#define MICROPY_PY_SYS_EXC_INFO     (1)
 #define MICROPY_PY_COLLECTIONS_ORDEREDDICT (1)
 #define MICROPY_PY_MATH_SPECIAL_FUNCTIONS (1)
 #define MICROPY_PY_CMATH            (1)
@@ -87,6 +95,7 @@
 #define MICROPY_PY_UHEAPQ           (1)
 #define MICROPY_PY_UHASHLIB         (1)
 #define MICROPY_PY_UBINASCII        (1)
+#define MICROPY_PY_MACHINE          (1)
 
 // Define to MICROPY_ERROR_REPORTING_DETAILED to get function, etc.
 // names in exception messages (may require more RAM).

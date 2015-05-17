@@ -32,6 +32,7 @@
 
 #include "py/binary.h"
 #include "py/smallint.h"
+#include "py/objint.h"
 
 // Helpers to work with binary-encoded data
 
@@ -282,11 +283,18 @@ void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte **
         }
 #endif
         default:
-            // we handle large ints here by calling the truncated accessor
+            #if MICROPY_LONGINT_IMPL != MICROPY_LONGINT_IMPL_NONE
             if (MP_OBJ_IS_TYPE(val_in, &mp_type_int)) {
-                val = mp_obj_int_get_truncated(val_in);
-            } else {
+                mp_obj_int_to_bytes_impl(val_in, struct_type == '>', size, p);
+                return;
+            } else
+            #endif
+            {
                 val = mp_obj_get_int(val_in);
+                // sign extend if needed
+                if (BYTES_PER_WORD < 8 && size > sizeof(val) && is_signed(val_type) && (mp_int_t)val < 0) {
+                    memset(p + sizeof(val), 0xff, size - sizeof(val));
+                }
             }
     }
 

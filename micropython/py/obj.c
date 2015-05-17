@@ -147,47 +147,6 @@ bool mp_obj_is_callable(mp_obj_t o_in) {
     return mp_obj_instance_is_callable(o_in);
 }
 
-mp_int_t mp_obj_hash(mp_obj_t o_in) {
-    if (o_in == mp_const_false) {
-        return 0; // needs to hash to same as the integer 0, since False==0
-    } else if (o_in == mp_const_true) {
-        return 1; // needs to hash to same as the integer 1, since True==1
-    } else if (MP_OBJ_IS_SMALL_INT(o_in)) {
-        return MP_OBJ_SMALL_INT_VALUE(o_in);
-    } else if (MP_OBJ_IS_TYPE(o_in, &mp_type_int)) {
-        return mp_obj_int_hash(o_in);
-    } else if (MP_OBJ_IS_STR(o_in) || MP_OBJ_IS_TYPE(o_in, &mp_type_bytes)) {
-        return mp_obj_str_get_hash(o_in);
-    } else if (MP_OBJ_IS_TYPE(o_in, &mp_type_NoneType)) {
-        return (mp_int_t)o_in;
-    } else if (MP_OBJ_IS_FUN(o_in)) {
-        return (mp_int_t)o_in;
-    } else if (MP_OBJ_IS_TYPE(o_in, &mp_type_tuple)) {
-        return mp_obj_tuple_hash(o_in);
-    } else if (MP_OBJ_IS_TYPE(o_in, &mp_type_type)) {
-        return (mp_int_t)o_in;
-    } else if (MP_OBJ_IS_OBJ(o_in)) {
-        // if a valid __hash__ method exists, use it
-        mp_obj_t hash_method[2];
-        mp_load_method_maybe(o_in, MP_QSTR___hash__, hash_method);
-        if (hash_method[0] != MP_OBJ_NULL) {
-            mp_obj_t hash_val = mp_call_method_n_kw(0, 0, hash_method);
-            if (MP_OBJ_IS_INT(hash_val)) {
-                return mp_obj_int_get_truncated(hash_val);
-            }
-        }
-    }
-
-    // TODO hash class and instances - in CPython by default user created classes' __hash__ resolves to their id
-
-    if (MICROPY_ERROR_REPORTING == MICROPY_ERROR_REPORTING_TERSE) {
-        nlr_raise(mp_obj_new_exception_msg(&mp_type_TypeError, "unhashable type"));
-    } else {
-        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError,
-            "unhashable type: '%s'", mp_obj_get_type_str(o_in)));
-    }
-}
-
 // This function implements the '==' operator (and so the inverse of '!=').
 //
 // From the Python language reference:
@@ -269,6 +228,14 @@ mp_int_t mp_obj_get_int(mp_const_obj_t arg) {
             nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_TypeError,
                 "can't convert %s to int", mp_obj_get_type_str(arg)));
         }
+    }
+}
+
+mp_int_t mp_obj_get_int_truncated(mp_const_obj_t arg) {
+    if (MP_OBJ_IS_INT(arg)) {
+        return mp_obj_int_get_truncated(arg);
+    } else {
+        return mp_obj_get_int(arg);
     }
 }
 
@@ -524,5 +491,12 @@ bool mp_get_buffer(mp_obj_t obj, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
 void mp_get_buffer_raise(mp_obj_t obj, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
     if (!mp_get_buffer(obj, bufinfo, flags)) {
         nlr_raise(mp_obj_new_exception_msg(&mp_type_TypeError, "object with buffer protocol required"));
+    }
+}
+
+mp_obj_t mp_generic_unary_op(mp_uint_t op, mp_obj_t o_in) {
+    switch (op) {
+        case MP_UNARY_OP_HASH: return MP_OBJ_NEW_SMALL_INT((mp_uint_t)o_in);
+        default: return MP_OBJ_NULL; // op not supported
     }
 }

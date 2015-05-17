@@ -48,10 +48,6 @@ STATIC mp_obj_t static_class_method_make_new(mp_obj_t self_in, mp_uint_t n_args,
 /******************************************************************************/
 // instance object
 
-#define is_instance_type(type) ((type)->make_new == instance_make_new)
-#define is_native_type(type) ((type)->make_new != instance_make_new)
-mp_obj_t instance_make_new(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args);
-
 STATIC mp_obj_t mp_obj_new_instance(mp_obj_t class, uint subobjs) {
     mp_obj_instance_t *o = m_new_obj_var(mp_obj_instance_t, mp_obj_t, subobjs);
     o->base.type = class;
@@ -73,7 +69,7 @@ STATIC int instance_count_native_bases(const mp_obj_type_t *type, const mp_obj_t
             // Not a "real" type
             continue;
         }
-        if (is_native_type(bt)) {
+        if (mp_obj_is_native_type(bt)) {
             *last_native_base = bt;
             count++;
         } else {
@@ -114,7 +110,7 @@ STATIC void mp_obj_class_lookup(struct class_lookup_data  *lookup, const mp_obj_
         // This avoids extra method_name => slot lookup. On the other hand,
         // this should not be applied to class types, as will result in extra
         // lookup either.
-        if (lookup->meth_offset != 0 && is_native_type(type)) {
+        if (lookup->meth_offset != 0 && mp_obj_is_native_type(type)) {
             if (*(void**)((char*)type + lookup->meth_offset) != NULL) {
                 DEBUG_printf("mp_obj_class_lookup: matched special meth slot for %s\n", qstr_str(lookup->attr));
                 lookup->dest[0] = MP_OBJ_SENTINEL;
@@ -135,7 +131,7 @@ STATIC void mp_obj_class_lookup(struct class_lookup_data  *lookup, const mp_obj_
                     mp_convert_member_lookup(NULL, org_type, elem->value, lookup->dest);
                 } else {
                     mp_obj_instance_t *obj = lookup->obj;
-                    if (obj != MP_OBJ_NULL && is_native_type(type) && type != &mp_type_object /* object is not a real type */) {
+                    if (obj != MP_OBJ_NULL && mp_obj_is_native_type(type) && type != &mp_type_object /* object is not a real type */) {
                         // If we're dealing with native base class, then it applies to native sub-object
                         obj = obj->subobj[0];
                     }
@@ -153,7 +149,7 @@ STATIC void mp_obj_class_lookup(struct class_lookup_data  *lookup, const mp_obj_
         // Previous code block takes care about attributes defined in .locals_dict,
         // but some attributes of native types may be handled using .load_attr method,
         // so make sure we try to lookup those too.
-        if (lookup->obj != MP_OBJ_NULL && !lookup->is_type && is_native_type(type) && type != &mp_type_object /* object is not a real type */) {
+        if (lookup->obj != MP_OBJ_NULL && !lookup->is_type && mp_obj_is_native_type(type) && type != &mp_type_object /* object is not a real type */) {
             mp_load_method_maybe(lookup->obj->subobj[0], lookup->attr, lookup->dest);
             if (lookup->dest[0] != MP_OBJ_NULL) {
                 return;
@@ -238,9 +234,10 @@ STATIC void instance_print(const mp_print_t *print, mp_obj_t self_in, mp_print_k
     mp_printf(print, "<%s object at %p>", mp_obj_get_type_str(self_in), self_in);
 }
 
-mp_obj_t instance_make_new(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
+mp_obj_t mp_obj_instance_make_new(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
     assert(MP_OBJ_IS_TYPE(self_in, &mp_type_type));
     mp_obj_type_t *self = self_in;
+    assert(mp_obj_is_instance_type(self));
 
     const mp_obj_type_t *native_base;
     uint num_native_bases = instance_count_native_bases(self, &native_base);
@@ -330,6 +327,7 @@ mp_obj_t instance_make_new(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, c
 const qstr mp_unary_op_method_name[] = {
     [MP_UNARY_OP_BOOL] = MP_QSTR___bool__,
     [MP_UNARY_OP_LEN] = MP_QSTR___len__,
+    [MP_UNARY_OP_HASH] = MP_QSTR___hash__,
     #if MICROPY_PY_ALL_SPECIAL_METHODS
     [MP_UNARY_OP_POSITIVE] = MP_QSTR___pos__,
     [MP_UNARY_OP_NEGATIVE] = MP_QSTR___neg__,
@@ -358,8 +356,28 @@ STATIC mp_obj_t instance_unary_op(mp_uint_t op, mp_obj_t self_in) {
     if (member[0] == MP_OBJ_SENTINEL) {
         return mp_unary_op(op, self->subobj[0]);
     } else if (member[0] != MP_OBJ_NULL) {
-        return mp_call_function_1(member[0], self_in);
+        mp_obj_t val = mp_call_function_1(member[0], self_in);
+        // __hash__ must return a small int
+        if (op == MP_UNARY_OP_HASH) {
+            val = MP_OBJ_NEW_SMALL_INT(mp_obj_get_int_truncated(val));
+        }
+        return val;
     } else {
+        if (op == MP_UNARY_OP_HASH) {
+            lookup.attr = MP_QSTR___eq__;
+            mp_obj_class_lookup(&lookup, self->base.type);
+            if (member[0] == MP_OBJ_NULL) {
+                // https://docs.python.org/3/reference/datamodel.html#object.__hash__
+                // "User-defined classes have __eq__() and __hash__() methods by default;
+                // with them, all objects compare unequal (except with themselves) and 
+                // x.__hash__() returns an appropriate value such that x == y implies
+                // both that x is y and hash(x) == hash(y)."
+                return MP_OBJ_NEW_SMALL_INT((mp_uint_t)self_in);
+            }
+            // "A class that overrides __eq__() and does not define __hash__() will have its __hash__() implicitly set to None.
+            // When the __hash__() method of a class is None, instances of the class will raise an appropriate TypeError"
+        }
+
         return MP_OBJ_NULL; // op not supported
     }
 }
@@ -442,7 +460,7 @@ STATIC mp_obj_t instance_binary_op(mp_uint_t op, mp_obj_t lhs_in, mp_obj_t rhs_i
 
 STATIC void mp_obj_instance_load_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     // logic: look in instance members then class locals
-    assert(is_instance_type(mp_obj_get_type(self_in)));
+    assert(mp_obj_is_instance_type(mp_obj_get_type(self_in)));
     mp_obj_instance_t *self = self_in;
 
     mp_map_elem_t *elem = mp_map_lookup(&self->members, MP_OBJ_NEW_QSTR(attr), MP_MAP_LOOKUP);
@@ -838,6 +856,7 @@ const mp_obj_type_t mp_type_type = {
     .print = type_print,
     .make_new = type_make_new,
     .call = type_call,
+    .unary_op = mp_generic_unary_op,
     .attr = type_attr,
 };
 
@@ -870,7 +889,7 @@ mp_obj_t mp_obj_new_type(qstr name, mp_obj_t bases_tuple, mp_obj_t locals_dict) 
     o->base.type = &mp_type_type;
     o->name = name;
     o->print = instance_print;
-    o->make_new = instance_make_new;
+    o->make_new = mp_obj_instance_make_new;
     o->call = mp_obj_instance_call;
     o->unary_op = instance_unary_op;
     o->binary_op = instance_binary_op;

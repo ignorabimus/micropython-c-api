@@ -479,6 +479,11 @@ typedef double mp_float_t;
 #define MICROPY_PY_BUILTINS_REVERSED (1)
 #endif
 
+// Whether to define "NotImplemented" special constant
+#ifndef MICROPY_PY_BUILTINS_NOTIMPLEMENTED
+#define MICROPY_PY_BUILTINS_NOTIMPLEMENTED (0)
+#endif
+
 // Whether to set __file__ for imported modules
 #ifndef MICROPY_PY___FILE__
 #define MICROPY_PY___FILE__ (1)
@@ -500,6 +505,12 @@ typedef double mp_float_t;
 // This is rarely used, but adds ~0.5K of code.
 #ifndef MICROPY_PY_ARRAY_SLICE_ASSIGN
 #define MICROPY_PY_ARRAY_SLICE_ASSIGN (0)
+#endif
+
+// Whether to support attrtuple type (MicroPython extension)
+// It provides space-efficient tuples with attribute access
+#ifndef MICROPY_PY_ATTRTUPLE
+#define MICROPY_PY_ATTRTUPLE (1)
 #endif
 
 // Whether to provide "collections" module
@@ -567,6 +578,12 @@ typedef double mp_float_t;
 #define MICROPY_PY_SYS_MAXSIZE (0)
 #endif
 
+// Whether to provide "sys.exc_info" function
+// Avoid enabling this, this function is Python2 heritage
+#ifndef MICROPY_PY_SYS_EXC_INFO
+#define MICROPY_PY_SYS_EXC_INFO (0)
+#endif
+
 // Whether to provide "sys.exit" function
 #ifndef MICROPY_PY_SYS_EXIT
 #define MICROPY_PY_SYS_EXIT (0)
@@ -606,6 +623,10 @@ typedef double mp_float_t;
 
 #ifndef MICROPY_PY_UBINASCII
 #define MICROPY_PY_UBINASCII (0)
+#endif
+
+#ifndef MICROPY_PY_MACHINE
+#define MICROPY_PY_MACHINE (0)
 #endif
 
 /*****************************************************************************/

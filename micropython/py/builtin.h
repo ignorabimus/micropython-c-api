@@ -87,7 +87,7 @@ extern const mp_obj_module_t mp_module_io;
 extern const mp_obj_module_t mp_module_math;
 extern const mp_obj_module_t mp_module_cmath;
 extern const mp_obj_module_t mp_module_micropython;
-extern const mp_obj_module_t mp_module_struct;
+extern const mp_obj_module_t mp_module_ustruct;
 extern const mp_obj_module_t mp_module_sys;
 extern const mp_obj_module_t mp_module_gc;
 
@@ -101,5 +101,6 @@ extern const mp_obj_module_t mp_module_ure;
 extern const mp_obj_module_t mp_module_uheapq;
 extern const mp_obj_module_t mp_module_uhashlib;
 extern const mp_obj_module_t mp_module_ubinascii;
+extern const mp_obj_module_t mp_module_machine;
 
 #endif // __MICROPY_INCLUDED_PY_BUILTIN_H__
