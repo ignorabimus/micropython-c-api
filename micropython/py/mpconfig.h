@@ -594,6 +594,11 @@ typedef double mp_float_t;
 #define MICROPY_PY_SYS_STDFILES (0)
 #endif
 
+// Whether to provide sys.{stdin,stdout,stderr}.buffer object
+// This is implemented per-port
+#ifndef MICROPY_PY_SYS_STDIO_BUFFER
+#define MICROPY_PY_SYS_STDIO_BUFFER (0)
+#endif
 
 // Extended modules
 
@@ -706,7 +711,16 @@ typedef double mp_float_t;
   #elif defined(__BIG_ENDIAN__) || defined(__BIG_ENDIAN) || defined (_BIG_ENDIAN)
     #define MP_ENDIANNESS_LITTLE (0)
   #else
-    #error endianness not defined and cannot detect it
+    #include <endian.h>
+      #if defined(__BYTE_ORDER)
+        #if __BYTE_ORDER == __LITTLE_ENDIAN
+          #define MP_ENDIANNESS_LITTLE (1)
+        #else
+          #define MP_ENDIANNESS_LITTLE (0)
+        #endif
+      #else
+        #error endianness not defined and cannot detect it
+      #endif
   #endif
   #define MP_ENDIANNESS_BIG (!MP_ENDIANNESS_LITTLE)
 #endif

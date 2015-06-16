@@ -30,6 +30,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -44,6 +45,7 @@
 #include "py/gc.h"
 #include "py/stackctrl.h"
 #include "genhdr/mpversion.h"
+#include "unix_mphal.h"
 #include "input.h"
 
 // Command line options, with their defaults
@@ -55,22 +57,6 @@ mp_uint_t mp_verbose_flag = 0;
 // Heap size of GC heap (if enabled)
 // Make it larger on a 64 bit machine, because pointers are larger.
 long heap_size = 128*1024 * (sizeof(mp_uint_t) / 4);
-#endif
-
-#ifndef _WIN32
-#include <signal.h>
-
-STATIC void sighandler(int signum) {
-    if (signum == SIGINT) {
-        mp_obj_exception_clear_traceback(MP_STATE_VM(keyboard_interrupt_obj));
-        MP_STATE_VM(mp_pending_exception) = MP_STATE_VM(keyboard_interrupt_obj);
-        // disable our handler so next we really die
-        struct sigaction sa;
-        sa.sa_handler = SIG_DFL;
-        sigemptyset(&sa.sa_mask);
-        sigaction(SIGINT, &sa, NULL);
-    }
-}
 #endif
 
 STATIC void stderr_print_strn(void *env, const char *str, mp_uint_t len) {
@@ -110,14 +96,7 @@ STATIC int execute_from_lexer(mp_lexer_t *lex, mp_parse_input_kind_t input_kind,
         return 1;
     }
 
-    #ifndef _WIN32
-    // enable signal handler
-    struct sigaction sa;
-    sa.sa_handler = sighandler;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGINT, &sa, NULL);
-    sa.sa_handler = SIG_DFL;
-    #endif
+    mp_hal_set_interrupt_char(CHAR_CTRL_C);
 
     nlr_buf_t nlr;
     if (nlr_push(&nlr) == 0) {
@@ -144,20 +123,13 @@ STATIC int execute_from_lexer(mp_lexer_t *lex, mp_parse_input_kind_t input_kind,
             mp_call_function_0(module_fun);
         }
 
-        #ifndef _WIN32
-        // disable signal handler
-        sigaction(SIGINT, &sa, NULL);
-        #endif
-
+        mp_hal_set_interrupt_char(-1);
         nlr_pop();
         return 0;
 
     } else {
         // uncaught exception
-        #ifndef _WIN32
-        // disable signal handler
-        sigaction(SIGINT, &sa, NULL);
-        #endif
+        mp_hal_set_interrupt_char(-1);
         return handle_uncaught_exception((mp_obj_t)nlr.ret_val);
     }
 }
@@ -177,7 +149,7 @@ STATIC char *strjoin(const char *s1, int sep_char, const char *s2) {
 }
 
 STATIC int do_repl(void) {
-    printf("Micro Python " MICROPY_GIT_TAG " on " MICROPY_BUILD_DATE "; " MICROPY_PY_SYS_PLATFORM " version\n");
+    mp_hal_stdout_tx_str("Micro Python " MICROPY_GIT_TAG " on " MICROPY_BUILD_DATE "; " MICROPY_PY_SYS_PLATFORM " version\n");
 
     for (;;) {
         char *line = prompt(">>> ");
@@ -308,8 +280,6 @@ STATIC void set_sys_argv(char *argv[], int argc, int start_arg) {
 #endif
 
 int main(int argc, char **argv) {
-    prompt_read_history();
-
     mp_stack_set_limit(40000 * (BYTES_PER_WORD / 4));
 
     pre_process_options(argc, argv);
@@ -329,7 +299,11 @@ int main(int argc, char **argv) {
     char *home = getenv("HOME");
     char *path = getenv("MICROPYPATH");
     if (path == NULL) {
+        #ifdef MICROPY_PY_SYS_PATH_DEFAULT
+        path = MICROPY_PY_SYS_PATH_DEFAULT;
+        #else
         path = "~/.micropython/lib:/usr/lib/micropython";
+        #endif
     }
     mp_uint_t path_num = 1; // [0] is for current dir (or base dir of the script)
     for (char *p = path; p != NULL; p = strchr(p, PATHLIST_SEP_CHAR)) {
@@ -475,7 +449,14 @@ int main(int argc, char **argv) {
     }
 
     if (ret == NOTHING_EXECUTED) {
-        ret = do_repl();
+        if (isatty(0)) {
+            prompt_read_history();
+            ret = do_repl();
+            prompt_write_history();
+        } else {
+            mp_lexer_t *lex = mp_lexer_new_from_fd(MP_QSTR__lt_stdin_gt_, 0, false);
+            ret = execute_from_lexer(lex, MP_PARSE_FILE_INPUT, false);
+        }
     }
 
     #if MICROPY_PY_MICROPYTHON_MEM_INFO
@@ -493,7 +474,6 @@ int main(int argc, char **argv) {
 #endif
 
     //printf("total bytes = %d\n", m_get_total_bytes_allocated());
-    prompt_write_history();
     return ret & 0xff;
 }
 #endif

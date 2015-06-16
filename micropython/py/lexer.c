@@ -112,12 +112,11 @@ STATIC bool is_following_odigit(mp_lexer_t *lex) {
     return lex->chr1 >= '0' && lex->chr1 <= '7';
 }
 
-// TODO UNICODE include unicode characters in definition of identifiers
+// to easily parse utf-8 identifiers we allow any raw byte with high bit set
 STATIC bool is_head_of_identifier(mp_lexer_t *lex) {
-    return is_letter(lex) || lex->chr0 == '_';
+    return is_letter(lex) || lex->chr0 == '_' || lex->chr0 >= 0x80;
 }
 
-// TODO UNICODE include unicode characters in definition of identifiers
 STATIC bool is_tail_of_identifier(mp_lexer_t *lex) {
     return is_head_of_identifier(lex) || is_digit(lex);
 }
@@ -261,16 +260,6 @@ STATIC const char *tok_kw[] = {
     "__debug__",
 };
 
-STATIC mp_uint_t hex_digit(unichar c) {
-    // c is assumed to be hex digit
-    mp_uint_t n = c - '0';
-    if (n > 9) {
-        n &= ~('a' - 'A');
-        n -= ('A' - ('9' + 1));
-    }
-    return n;
-}
-
 // This is called with CUR_CHAR() before first hex digit, and should return with
 // it pointing to last hex digit
 // num_digits must be greater than zero
@@ -282,7 +271,7 @@ STATIC bool get_hex(mp_lexer_t *lex, mp_uint_t num_digits, mp_uint_t *result) {
         if (!unichar_isxdigit(c)) {
             return false;
         }
-        num = (num << 4) + hex_digit(c);
+        num = (num << 4) + unichar_xdigit_value(c);
     }
     *result = num;
     return true;
@@ -533,13 +522,13 @@ STATIC void mp_lexer_next_token_into(mp_lexer_t *lex, bool first_token) {
     } else if (is_head_of_identifier(lex)) {
         lex->tok_kind = MP_TOKEN_NAME;
 
-        // get first char
-        vstr_add_char(&lex->vstr, CUR_CHAR(lex));
+        // get first char (add as byte to remain 8-bit clean and support utf-8)
+        vstr_add_byte(&lex->vstr, CUR_CHAR(lex));
         next_char(lex);
 
         // get tail chars
         while (!is_end(lex) && is_tail_of_identifier(lex)) {
-            vstr_add_char(&lex->vstr, CUR_CHAR(lex));
+            vstr_add_byte(&lex->vstr, CUR_CHAR(lex));
             next_char(lex);
         }
 

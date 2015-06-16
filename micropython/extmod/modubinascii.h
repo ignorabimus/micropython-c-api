@@ -3,7 +3,7 @@
  *
  * The MIT License (MIT)
  *
- * Copyright (c) 2013, 2014 Damien P. George
+ * Copyright (c) 2014 Paul Sokolovsky
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,13 +23,14 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
-#define __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
 
-#include "py/mpconfig.h"
+#ifndef MICROPY_EXTMOD_MODUBINASCII
+#define MICROPY_EXTMOD_MODUBINASCII
 
-#if MICROPY_PY_BUILTINS_FLOAT
-int mp_format_float(mp_float_t f, char *buf, size_t bufSize, char fmt, int prec, char sign);
-#endif
+extern mp_obj_t mod_binascii_hexlify(mp_uint_t n_args, const mp_obj_t *args);
+extern mp_obj_t mod_binascii_unhexlify(mp_obj_t data);
 
-#endif // __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
+MP_DECLARE_CONST_FUN_OBJ(mod_binascii_hexlify_obj);
+MP_DECLARE_CONST_FUN_OBJ(mod_binascii_unhexlify_obj);
+
+#endif /* MICROPY_EXTMOD_MODUBINASCII */

@@ -24,9 +24,6 @@
  * THE SOFTWARE.
  */
 
-// Debugging help - use printf() easily
-#include <stdio.h>
-
 // options to control how Micro Python is built
 
 #define MICROPY_ALLOC_PATH_MAX      (PATH_MAX)
@@ -84,6 +81,7 @@
 #define MICROPY_PY_CMATH            (1)
 #define MICROPY_PY_IO_FILEIO        (1)
 #define MICROPY_PY_GC_COLLECT_RETVAL (1)
+#define MICROPY_MODULE_FROZEN       (1)
 
 #define MICROPY_STACKLESS           (0)
 #define MICROPY_STACKLESS_STRICT    (0)
@@ -187,9 +185,14 @@ extern const struct _mp_obj_fun_builtin_t mp_builtin_open_obj;
     { MP_OBJ_NEW_QSTR(MP_QSTR_input), (mp_obj_t)&mp_builtin_input_obj }, \
     { MP_OBJ_NEW_QSTR(MP_QSTR_open), (mp_obj_t)&mp_builtin_open_obj },
 
+#define MP_STATE_PORT MP_STATE_VM
+
 #define MICROPY_PORT_ROOT_POINTERS \
+    const char *readline_hist[50]; \
     mp_obj_t keyboard_interrupt_obj; \
     void *mmap_region_head; \
+
+#define MICROPY_HAL_H "unix_mphal.h"
 
 // We need to provide a declaration/definition of alloca()
 #ifdef __FreeBSD__

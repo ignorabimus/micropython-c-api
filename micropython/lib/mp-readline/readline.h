@@ -23,13 +23,17 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
-#define __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
 
-#include "py/mpconfig.h"
+#define CHAR_CTRL_A (1)
+#define CHAR_CTRL_B (2)
+#define CHAR_CTRL_C (3)
+#define CHAR_CTRL_D (4)
+#define CHAR_CTRL_E (5)
 
-#if MICROPY_PY_BUILTINS_FLOAT
-int mp_format_float(mp_float_t f, char *buf, size_t bufSize, char fmt, int prec, char sign);
-#endif
+void readline_init0(void);
+int readline(vstr_t *line, const char *prompt);
+void readline_push_history(const char *line);
 
-#endif // __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
+void readline_init(vstr_t *line, const char *prompt);
+void readline_note_newline(const char *prompt);
+int readline_process_char(int c);

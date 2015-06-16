@@ -35,10 +35,6 @@
 #include "py/objint.h"
 #include "py/runtime.h"
 
-#if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
-#include <stdio.h>
-#endif
-
 #if MICROPY_PY_BUILTINS_FLOAT
 #include "py/formatfloat.h"
 #endif
@@ -124,9 +120,13 @@ int mp_print_strn(const mp_print_t *print, const char *str, mp_uint_t len, int f
 // We can use 16 characters for 32-bit and 32 characters for 64-bit
 #define INT_BUF_SIZE (sizeof(mp_int_t) * 4)
 
-// This function is used by stmhal port to implement printf.
+// Our mp_vprintf function below does not support the '#' format modifier to
+// print the prefix of a non-base-10 number, so we don't need code for this.
+#define SUPPORT_INT_BASE_PREFIX (0)
+
+// This function is used exclusively by mp_vprintf to format ints.
 // It needs to be a separate function to mp_print_mp_int, since converting to a mp_int looses the MSB.
-int mp_print_int(const mp_print_t *print, mp_uint_t x, int sgn, int base, int base_char, int flags, char fill, int width) {
+STATIC int mp_print_int(const mp_print_t *print, mp_uint_t x, int sgn, int base, int base_char, int flags, char fill, int width) {
     char sign = 0;
     if (sgn) {
         if ((mp_int_t)x < 0) {
@@ -157,6 +157,7 @@ int mp_print_int(const mp_print_t *print, mp_uint_t x, int sgn, int base, int ba
         } while (b > buf && x != 0);
     }
 
+    #if SUPPORT_INT_BASE_PREFIX
     char prefix_char = '\0';
 
     if (flags & PF_FLAG_SHOW_PREFIX) {
@@ -168,6 +169,7 @@ int mp_print_int(const mp_print_t *print, mp_uint_t x, int sgn, int base, int ba
             prefix_char = base_char + 'x' - 'a';
         }
     }
+    #endif
 
     int len = 0;
     if (flags & PF_FLAG_PAD_AFTER_SIGN) {
@@ -175,16 +177,20 @@ int mp_print_int(const mp_print_t *print, mp_uint_t x, int sgn, int base, int ba
             len += mp_print_strn(print, &sign, 1, flags, fill, 1);
             width--;
         }
+        #if SUPPORT_INT_BASE_PREFIX
         if (prefix_char) {
             len += mp_print_strn(print, "0", 1, flags, fill, 1);
             len += mp_print_strn(print, &prefix_char, 1, flags, fill, 1);
             width -= 2;
         }
+        #endif
     } else {
+        #if SUPPORT_INT_BASE_PREFIX
         if (prefix_char && b > &buf[1]) {
             *(--b) = prefix_char;
             *(--b) = '0';
         }
+        #endif
         if (sign && b > buf) {
             *(--b) = sign;
         }
@@ -340,29 +346,12 @@ int mp_print_float(const mp_print_t *print, mp_float_t f, char fmt, int flags, c
     if (flags & PF_FLAG_SPACE_SIGN) {
         sign = ' ';
     }
-    int len;
-#if MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_FLOAT
-    len = mp_format_float(f, buf, sizeof(buf), fmt, prec, sign);
-#elif MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
-    char fmt_buf[6];
-    char *fmt_s = fmt_buf;
 
-    *fmt_s++ = '%';
-    if (sign) {
-        *fmt_s++ = sign;
-    }
-    *fmt_s++ = '.';
-    *fmt_s++ = '*';
-    *fmt_s++ = fmt;
-    *fmt_s = '\0';
-
-    len = snprintf(buf, sizeof(buf), fmt_buf, prec, f);
+    int len = mp_format_float(f, buf, sizeof(buf), fmt, prec, sign);
     if (len < 0) {
         len = 0;
     }
-#else
-#error Unknown MICROPY FLOAT IMPL
-#endif
+
     char *s = buf;
 
     if ((flags & PF_FLAG_ADD_PERCENT) && (size_t)(len + 1) < sizeof(buf)) {
@@ -374,21 +363,11 @@ int mp_print_float(const mp_print_t *print, mp_float_t f, char fmt, int flags, c
     if ((flags & PF_FLAG_PAD_AFTER_SIGN) && buf[0] < '0') {
         // We have a sign character
         s++;
-        if (*s <= '9' || (flags & PF_FLAG_PAD_NAN_INF)) {
-            // We have a number, or we have a inf/nan and PAD_NAN_INF is set
-            // With '{:06e}'.format(float('-inf')) you get '-00inf'
-            chrs += mp_print_strn(print, &buf[0], 1, 0, 0, 1);
-            width--;
-            len--;
-        }
+        chrs += mp_print_strn(print, &buf[0], 1, 0, 0, 1);
+        width--;
+        len--;
     }
 
-    if (*s > 'A' && (flags & PF_FLAG_PAD_NAN_INF) == 0) {
-        // We have one of the inf or nan variants, suppress zero fill.
-        // With printf, if you use: printf("%06e", -inf) then you get "  -inf"
-        // so suppress the zero fill.
-        fill = ' ';
-    }
     chrs += mp_print_strn(print, s, len, flags, fill, width);
 
     return chrs;

@@ -34,6 +34,7 @@ SRC_C = \
 	unix/modos.c \
 	unix/modtime.c \
 	unix/gccollect.c \
+	windows_mphal.c \
 	realpath.c \
 	init.c \
 	sleep.c \
@@ -42,6 +43,9 @@ OBJ = $(PY_O) $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
 
 ifeq ($(MICROPY_USE_READLINE),1)
 CFLAGS_MOD += -DMICROPY_USE_READLINE=1
+SRC_C += lib/mp-readline/readline.c
+else ifeq ($(MICROPY_USE_READLINE),2)
+CFLAGS_MOD += -DMICROPY_USE_READLINE=2
 LDFLAGS_MOD += -lreadline
 # the following is needed for BSD
 #LDFLAGS_MOD += -ltermcap

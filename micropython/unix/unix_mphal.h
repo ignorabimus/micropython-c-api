@@ -3,7 +3,7 @@
  *
  * The MIT License (MIT)
  *
- * Copyright (c) 2013, 2014 Damien P. George
+ * Copyright (c) 2015 Damien P. George
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,13 +23,17 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
-#define __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
 
-#include "py/mpconfig.h"
-
-#if MICROPY_PY_BUILTINS_FLOAT
-int mp_format_float(mp_float_t f, char *buf, size_t bufSize, char fmt, int prec, char sign);
+#ifndef CHAR_CTRL_C
+#define CHAR_CTRL_C (3)
 #endif
 
-#endif // __MICROPY_INCLUDED_PY_FORMATFLOAT_H__
+void mp_hal_set_interrupt_char(char c);
+
+void mp_hal_stdio_mode_raw(void);
+void mp_hal_stdio_mode_orig(void);
+
+int mp_hal_stdin_rx_chr(void);
+void mp_hal_stdout_tx_str(const char *str);
+void mp_hal_stdout_tx_strn(const char *str, mp_uint_t len);
+void mp_hal_stdout_tx_strn_cooked(const char *str, mp_uint_t len);

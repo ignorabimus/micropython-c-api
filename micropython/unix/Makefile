@@ -57,7 +57,12 @@ endif
 endif
 
 ifeq ($(MICROPY_USE_READLINE),1)
+INC +=  -I../lib/mp-readline
 CFLAGS_MOD += -DMICROPY_USE_READLINE=1
+LIB_SRC_C_EXTRA += mp-readline/readline.c
+endif
+ifeq ($(MICROPY_USE_READLINE),2)
+CFLAGS_MOD += -DMICROPY_USE_READLINE=2
 LDFLAGS_MOD += -lreadline
 # the following is needed for BSD
 #LDFLAGS_MOD += -ltermcap
@@ -90,6 +95,7 @@ endif
 SRC_C = \
 	main.c \
 	gccollect.c \
+	unix_mphal.c \
 	input.c \
 	file.c \
 	modos.c \
@@ -97,8 +103,20 @@ SRC_C = \
 	coverage.c \
 	$(SRC_MOD)
 
+# Include builtin package manager in the standard build (and coverage)
+ifeq ($(PROG),micropython)
+SRC_C += $(BUILD)/_frozen_upip.c
+else ifeq ($(PROG),micropython_coverage)
+SRC_C += $(BUILD)/_frozen_upip.c
+endif
 
-OBJ = $(PY_O) $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
+LIB_SRC_C = $(addprefix lib/,\
+	$(LIB_SRC_C_EXTRA) \
+	)
+
+OBJ = $(PY_O)
+OBJ += $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
+OBJ += $(addprefix $(BUILD)/, $(LIB_SRC_C:.c=.o))
 
 include ../py/mkrules.mk
 
@@ -130,7 +148,7 @@ fast:
 
 # build a minimal interpreter
 minimal:
-	$(MAKE) COPT="-Os -DNDEBUG" CFLAGS_EXTRA='-DMP_CONFIGFILE="<mpconfigport_minimal.h>"' BUILD=build-minimal PROG=micropython_minimal MICROPY_PY_TIME=0 MICROPY_PY_TERMIOS=0 MICROPY_PY_SOCKET=0 MICROPY_PY_FFI=0
+	$(MAKE) COPT="-Os -DNDEBUG" CFLAGS_EXTRA='-DMP_CONFIGFILE="<mpconfigport_minimal.h>"' BUILD=build-minimal PROG=micropython_minimal MICROPY_PY_TIME=0 MICROPY_PY_TERMIOS=0 MICROPY_PY_SOCKET=0 MICROPY_PY_FFI=0 MICROPY_USE_READLINE=0
 
 # build an interpreter for coverage testing and do the testing
 coverage:
@@ -142,3 +160,17 @@ coverage_test: coverage
 	cd ../tests && MICROPY_MICROPYTHON=../$(DIRNAME)/micropython_coverage ./run-tests --emit native
 	gcov -o build-coverage/py ../py/*.c
 	gcov -o build-coverage/extmod ../extmod/*.c
+
+$(BUILD)/_frozen_upip.c: $(BUILD)/frozen_upip/upip.py
+	../tools/make-frozen.py $(dir $^) > $@
+
+# Select latest upip version available
+UPIP_TARBALL := $(shell ls -1 -v ../tools/micropython-upip-*.tar.gz | tail -n1)
+
+$(BUILD)/frozen_upip/upip.py: $(UPIP_TARBALL)
+	$(ECHO) "MISC Preparing upip as frozen module"
+	$(Q)rm -rf $(BUILD)/micropython-upip-*
+	$(Q)tar -C $(BUILD) -xz -f $^
+	$(Q)rm -rf $(dir $@)
+	$(Q)mkdir -p $(dir $@)
+	$(Q)cp $(BUILD)/micropython-upip-*/upip*.py $(dir $@)

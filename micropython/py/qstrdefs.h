@@ -448,6 +448,9 @@ Q(platform)
 Q(stdin)
 Q(stdout)
 Q(stderr)
+#if MICROPY_PY_SYS_STDIO_BUFFER
+Q(buffer)
+#endif
 Q(version)
 Q(version_info)
 #if MICROPY_PY_ATTRTUPLE
@@ -577,13 +580,13 @@ Q(heapify)
 Q(uhashlib)
 Q(update)
 Q(digest)
-Q(hexdigest)
 Q(sha256)
 #endif
 
 #if MICROPY_PY_UBINASCII
 Q(ubinascii)
 Q(hexlify)
+Q(unhexlify)
 #endif
 
 #if MICROPY_PY_MACHINE
