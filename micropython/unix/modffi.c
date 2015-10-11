@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <dlfcn.h>
 #include <ffi.h>
+#include <stdint.h>
 
 #include "py/nlr.h"
 #include "py/runtime.h"
@@ -140,7 +141,7 @@ STATIC mp_obj_t return_ffi_value(ffi_arg val, char type)
 {
     switch (type) {
         case 's': {
-            const char *s = (const char *)val;
+            const char *s = (const char *)(intptr_t)val;
             if (!s) {
                 return mp_const_none;
             }
@@ -159,7 +160,7 @@ STATIC mp_obj_t return_ffi_value(ffi_arg val, char type)
         }
         #endif
         case 'O':
-            return (mp_obj_t)val;
+            return (mp_obj_t)(intptr_t)val;
         default:
             return mp_obj_new_int(val);
     }
@@ -214,7 +215,7 @@ STATIC mp_obj_t ffimod_func(mp_uint_t n_args, const mp_obj_t *args) {
 
     void *sym = dlsym(self->handle, symname);
     if (sym == NULL) {
-        nlr_raise(mp_obj_new_exception_arg1(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(errno)));
+        nlr_raise(mp_obj_new_exception_arg1(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(ENOENT)));
     }
     return make_func(args[1], sym, args[3]);
 }
@@ -277,7 +278,7 @@ STATIC mp_obj_t ffimod_var(mp_obj_t self_in, mp_obj_t vartype_in, mp_obj_t symna
 
     void *sym = dlsym(self->handle, symname);
     if (sym == NULL) {
-        nlr_raise(mp_obj_new_exception_arg1(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(errno)));
+        nlr_raise(mp_obj_new_exception_arg1(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(ENOENT)));
     }
     mp_obj_ffivar_t *o = m_new_obj(mp_obj_ffivar_t);
     o->base.type = &ffivar_type;
@@ -294,7 +295,7 @@ STATIC mp_obj_t ffimod_addr(mp_obj_t self_in, mp_obj_t symname_in) {
 
     void *sym = dlsym(self->handle, symname);
     if (sym == NULL) {
-        nlr_raise(mp_obj_new_exception_arg1(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(errno)));
+        nlr_raise(mp_obj_new_exception_arg1(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(ENOENT)));
     }
     return mp_obj_new_int((mp_int_t)sym);
 }
@@ -355,7 +356,7 @@ STATIC mp_obj_t ffifunc_call(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw,
     for (uint i = 0; i < n_args; i++, argtype++) {
         mp_obj_t a = args[i];
         if (*argtype == 'O') {
-            values[i] = (ffi_arg)a;
+            values[i] = (ffi_arg)(intptr_t)a;
         #if MICROPY_PY_BUILTINS_FLOAT
         } else if (*argtype == 'f') {
             float *p = (float*)&values[i];
@@ -370,7 +371,7 @@ STATIC mp_obj_t ffifunc_call(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw,
             values[i] = mp_obj_int_get_truncated(a);
         } else if (MP_OBJ_IS_STR(a)) {
             const char *s = mp_obj_str_get_str(a);
-            values[i] = (ffi_arg)s;
+            values[i] = (ffi_arg)(intptr_t)s;
         } else if (((mp_obj_base_t*)a)->type->buffer_p.get_buffer != NULL) {
             mp_obj_base_t *o = (mp_obj_base_t*)a;
             mp_buffer_info_t bufinfo;
@@ -378,10 +379,10 @@ STATIC mp_obj_t ffifunc_call(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw,
             if (ret != 0) {
                 goto error;
             }
-            values[i] = (ffi_arg)bufinfo.buf;
+            values[i] = (ffi_arg)(intptr_t)bufinfo.buf;
         } else if (MP_OBJ_IS_TYPE(a, &fficallback_type)) {
             mp_obj_fficallback_t *p = a;
-            values[i] = (ffi_arg)p->func;
+            values[i] = (ffi_arg)(intptr_t)p->func;
         } else {
             goto error;
         }

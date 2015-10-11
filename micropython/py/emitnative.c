@@ -693,6 +693,13 @@ STATIC void emit_native_start_pass(emit_t *emit, pass_kind_t pass, scope_t *scop
         }
         ASM_ENTRY(emit->as, num_locals);
 
+        // TODO don't load r7 if we don't need it
+        #if N_THUMB
+        asm_thumb_mov_reg_i32(emit->as, ASM_THUMB_REG_R7, (mp_uint_t)mp_fun_table);
+        #elif N_ARM
+        asm_arm_mov_reg_i32(emit->as, ASM_ARM_REG_R7, (mp_uint_t)mp_fun_table);
+        #endif
+
         #if N_X86
         for (int i = 0; i < scope->num_pos_args; i++) {
             if (i == 0) {
@@ -729,6 +736,13 @@ STATIC void emit_native_start_pass(emit_t *emit, pass_kind_t pass, scope_t *scop
 
         // allocate space on C-stack for code_state structure, which includes state
         ASM_ENTRY(emit->as, STATE_START + emit->n_state);
+
+        // TODO don't load r7 if we don't need it
+        #if N_THUMB
+        asm_thumb_mov_reg_i32(emit->as, ASM_THUMB_REG_R7, (mp_uint_t)mp_fun_table);
+        #elif N_ARM
+        asm_arm_mov_reg_i32(emit->as, ASM_ARM_REG_R7, (mp_uint_t)mp_fun_table);
+        #endif
 
         // prepare incoming arguments for call to mp_setup_code_state
         #if N_X86
@@ -796,15 +810,6 @@ STATIC void emit_native_start_pass(emit_t *emit, pass_kind_t pass, scope_t *scop
         }
     }
 
-    #if N_THUMB
-    // TODO don't load r7 if we don't need it
-    asm_thumb_mov_reg_i32(emit->as, ASM_THUMB_REG_R7, (mp_uint_t)mp_fun_table);
-    #endif
-
-    #if N_ARM
-    // TODO don't load r7 if we don't need it
-    asm_arm_mov_reg_i32(emit->as, ASM_ARM_REG_R7, (mp_uint_t)mp_fun_table);
-    #endif
 }
 
 STATIC void emit_native_end_pass(emit_t *emit) {
@@ -1900,6 +1905,10 @@ STATIC void emit_native_setup_except(emit_t *emit, mp_uint_t label) {
     need_stack_settled(emit);
     emit_get_stack_pointer_to_reg_for_push(emit, REG_ARG_1, sizeof(nlr_buf_t) / sizeof(mp_uint_t)); // arg1 = pointer to nlr buf
     emit_call(emit, MP_F_NLR_PUSH);
+#if MICROPY_NLR_SETJMP
+    need_reg_all(emit);
+    ASM_CALL_IND(emit->as, setjmp, MP_F_NLR_PUSH);
+#endif
     ASM_JUMP_IF_REG_NONZERO(emit->as, REG_RET, label);
     emit_post(emit);
 }
@@ -2311,14 +2320,6 @@ STATIC void emit_native_call_function(emit_t *emit, mp_uint_t n_positional, mp_u
     } else {
         assert(vtype_fun == VTYPE_PYOBJ);
         if (star_flags) {
-            if (!(star_flags & MP_EMIT_STAR_FLAG_SINGLE)) {
-                // load dummy entry for non-existent pos_seq
-                emit_native_load_null(emit);
-                emit_native_rot_two(emit);
-            } else if (!(star_flags & MP_EMIT_STAR_FLAG_DOUBLE)) {
-                // load dummy entry for non-existent kw_dict
-                emit_native_load_null(emit);
-            }
             emit_get_stack_pointer_to_reg_for_pop(emit, REG_ARG_3, n_positional + 2 * n_keyword + 3); // pointer to args
             emit_call_with_2_imm_args(emit, MP_F_CALL_METHOD_N_KW_VAR, 0, REG_ARG_1, n_positional | (n_keyword << 8), REG_ARG_2);
             emit_post_push_reg(emit, VTYPE_PYOBJ, REG_RET);
@@ -2335,14 +2336,6 @@ STATIC void emit_native_call_function(emit_t *emit, mp_uint_t n_positional, mp_u
 
 STATIC void emit_native_call_method(emit_t *emit, mp_uint_t n_positional, mp_uint_t n_keyword, mp_uint_t star_flags) {
     if (star_flags) {
-        if (!(star_flags & MP_EMIT_STAR_FLAG_SINGLE)) {
-            // load dummy entry for non-existent pos_seq
-            emit_native_load_null(emit);
-            emit_native_rot_two(emit);
-        } else if (!(star_flags & MP_EMIT_STAR_FLAG_DOUBLE)) {
-            // load dummy entry for non-existent kw_dict
-            emit_native_load_null(emit);
-        }
         emit_get_stack_pointer_to_reg_for_pop(emit, REG_ARG_3, n_positional + 2 * n_keyword + 4); // pointer to args
         emit_call_with_2_imm_args(emit, MP_F_CALL_METHOD_N_KW_VAR, 1, REG_ARG_1, n_positional | (n_keyword << 8), REG_ARG_2);
         emit_post_push_reg(emit, VTYPE_PYOBJ, REG_RET);

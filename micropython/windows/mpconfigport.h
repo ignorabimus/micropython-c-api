@@ -51,6 +51,8 @@
 #define MICROPY_DEBUG_PRINTERS      (1)
 #define MICROPY_USE_READLINE_HISTORY (1)
 #define MICROPY_HELPER_REPL         (1)
+#define MICROPY_REPL_EMACS_KEYS     (1)
+#define MICROPY_REPL_AUTO_INDENT    (1)
 #define MICROPY_HELPER_LEXER_UNIX   (1)
 #define MICROPY_ENABLE_SOURCE_LINE  (1)
 #define MICROPY_FLOAT_IMPL          (MICROPY_FLOAT_IMPL_DOUBLE)
@@ -70,6 +72,7 @@
 #define MICROPY_PY_MICROPYTHON_MEM_INFO (1)
 #define MICROPY_PY_ALL_SPECIAL_METHODS (1)
 #define MICROPY_PY_ARRAY_SLICE_ASSIGN (1)
+#define MICROPY_PY_BUILTINS_SLICE_ATTRS (1)
 #define MICROPY_PY_SYS_EXIT         (1)
 #define MICROPY_PY_SYS_PLATFORM     "win32"
 #define MICROPY_PY_SYS_MAXSIZE      (1)
@@ -80,6 +83,10 @@
 #define MICROPY_PY_CMATH            (1)
 #define MICROPY_PY_IO_FILEIO        (1)
 #define MICROPY_PY_GC_COLLECT_RETVAL (1)
+#define MICROPY_MODULE_FROZEN       (0)
+
+#define MICROPY_STACKLESS           (0)
+#define MICROPY_STACKLESS_STRICT    (0)
 
 #define MICROPY_PY_UCTYPES          (1)
 #define MICROPY_PY_UZLIB            (1)
@@ -91,6 +98,7 @@
 #define MICROPY_PY_MACHINE          (1)
 
 #define MICROPY_ERROR_REPORTING     (MICROPY_ERROR_REPORTING_DETAILED)
+#define MICROPY_WARNINGS            (1)
 #ifdef _MSC_VER
 #define MICROPY_GCREGS_SETJMP       (1)
 #endif
@@ -192,9 +200,6 @@ void msec_sleep(double msec);
 #define restrict
 #define inline                      __inline
 #define alignof(t)                  __alignof(t)
-#define STDIN_FILENO                0
-#define STDOUT_FILENO               1
-#define STDERR_FILENO               2
 #define PATH_MAX                    MICROPY_ALLOC_PATH_MAX
 #define S_ISREG(m)                  (((m) & S_IFMT) == S_IFREG)
 #define S_ISDIR(m)                  (((m) & S_IFMT) == S_IFDIR)
