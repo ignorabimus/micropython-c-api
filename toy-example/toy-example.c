@@ -53,7 +53,7 @@ int main(void) {
 	mp_init();
 
 	// call a C function from Python
-	mp_store_name(qstr_from_str("c_print"), mp_obj_new_fun_native(0, 1, 0, MP_OBJ_NULL, MP_OBJ_NULL, callback_print));
+	mp_store_name(qstr_from_str("c_print"), mp_obj_new_fun_native(MP_OBJ_NULL, MP_OBJ_NULL, callback_print, m_new0(mp_uint_t, 1)));
 	do_str("c_print('Hello world!')\n");
 
 	// call a Python function from C

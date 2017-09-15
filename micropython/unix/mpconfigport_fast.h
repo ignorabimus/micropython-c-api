@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -36,5 +36,5 @@
 
 // Don't include builtin upip, as this build is again intended just for
 // synthetic benchmarking
-#undef MICROPY_MODULE_FROZEN
-#define MICROPY_MODULE_FROZEN    (0)
+#undef MICROPY_MODULE_FROZEN_STR
+#define MICROPY_MODULE_FROZEN_STR (0)

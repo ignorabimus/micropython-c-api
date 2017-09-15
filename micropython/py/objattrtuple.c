@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -34,7 +34,7 @@ STATIC
 #endif
 void mp_obj_attrtuple_print_helper(const mp_print_t *print, const qstr *fields, mp_obj_tuple_t *o) {
     mp_print_str(print, "(");
-    for (mp_uint_t i = 0; i < o->len; i++) {
+    for (size_t i = 0; i < o->len; i++) {
         if (i > 0) {
             mp_print_str(print, ", ");
         }
@@ -50,18 +50,18 @@ void mp_obj_attrtuple_print_helper(const mp_print_t *print, const qstr *fields, 
 
 STATIC void mp_obj_attrtuple_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
     (void)kind;
-    mp_obj_tuple_t *o = o_in;
-    const qstr *fields = (const qstr*)o->items[o->len];
+    mp_obj_tuple_t *o = MP_OBJ_TO_PTR(o_in);
+    const qstr *fields = (const qstr*)MP_OBJ_TO_PTR(o->items[o->len]);
     mp_obj_attrtuple_print_helper(print, fields, o);
 }
 
 STATIC void mp_obj_attrtuple_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     if (dest[0] == MP_OBJ_NULL) {
         // load attribute
-        mp_obj_tuple_t *self = self_in;
-        mp_uint_t len = self->len;
-        const qstr *fields = (const qstr*)self->items[len];
-        for (mp_uint_t i = 0; i < len; i++) {
+        mp_obj_tuple_t *self = MP_OBJ_TO_PTR(self_in);
+        size_t len = self->len;
+        const qstr *fields = (const qstr*)MP_OBJ_TO_PTR(self->items[len]);
+        for (size_t i = 0; i < len; i++) {
             if (fields[i] == attr) {
                 dest[0] = self->items[i];
                 return;
@@ -70,15 +70,15 @@ STATIC void mp_obj_attrtuple_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     }
 }
 
-mp_obj_t mp_obj_new_attrtuple(const qstr *fields, mp_uint_t n, const mp_obj_t *items) {
+mp_obj_t mp_obj_new_attrtuple(const qstr *fields, size_t n, const mp_obj_t *items) {
     mp_obj_tuple_t *o = m_new_obj_var(mp_obj_tuple_t, mp_obj_t, n + 1);
     o->base.type = &mp_type_attrtuple;
     o->len = n;
-    for (mp_uint_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         o->items[i] = items[i];
     }
-    o->items[n] = (void*)fields;
-    return o;
+    o->items[n] = MP_OBJ_FROM_PTR(fields);
+    return MP_OBJ_FROM_PTR(o);
 }
 
 const mp_obj_type_t mp_type_attrtuple = {

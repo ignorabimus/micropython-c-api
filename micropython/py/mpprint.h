@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -23,8 +23,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_MPPRINT_H__
-#define __MICROPY_INCLUDED_PY_MPPRINT_H__
+#ifndef MICROPY_INCLUDED_PY_MPPRINT_H
+#define MICROPY_INCLUDED_PY_MPPRINT_H
 
 #include "py/mpconfig.h"
 
@@ -39,7 +39,13 @@
 #define PF_FLAG_ADD_PERCENT       (0x100)
 #define PF_FLAG_SHOW_OCTAL_LETTER (0x200)
 
-typedef void (*mp_print_strn_t)(void *data, const char *str, mp_uint_t len);
+#if MICROPY_PY_IO && MICROPY_PY_SYS_STDFILES
+#    define MP_PYTHON_PRINTER &mp_sys_stdout_print
+#else
+#    define MP_PYTHON_PRINTER &mp_plat_print
+#endif
+
+typedef void (*mp_print_strn_t)(void *data, const char *str, size_t len);
 
 typedef struct _mp_print_t {
     void *data;
@@ -49,13 +55,13 @@ typedef struct _mp_print_t {
 // All (non-debug) prints go through one of the two interfaces below.
 // 1) Wrapper for platform print function, which wraps MP_PLAT_PRINT_STRN.
 extern const mp_print_t mp_plat_print;
-#if MICROPY_PY_IO
+#if MICROPY_PY_IO && MICROPY_PY_SYS_STDFILES
 // 2) Wrapper for printing to sys.stdout.
 extern const mp_print_t mp_sys_stdout_print;
 #endif
 
 int mp_print_str(const mp_print_t *print, const char *str);
-int mp_print_strn(const mp_print_t *print, const char *str, mp_uint_t len, int flags, char fill, int width);
+int mp_print_strn(const mp_print_t *print, const char *str, size_t len, int flags, char fill, int width);
 #if MICROPY_PY_BUILTINS_FLOAT
 int mp_print_float(const mp_print_t *print, mp_float_t f, char fmt, int flags, char fill, int width, int prec);
 #endif
@@ -65,4 +71,4 @@ int mp_printf(const mp_print_t *print, const char *fmt, ...);
 int mp_vprintf(const mp_print_t *print, const char *fmt, va_list args);
 #endif
 
-#endif // __MICROPY_INCLUDED_PY_MPPRINT_H__
+#endif // MICROPY_INCLUDED_PY_MPPRINT_H

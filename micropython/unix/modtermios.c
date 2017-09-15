@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -29,13 +29,9 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "py/nlr.h"
 #include "py/objlist.h"
 #include "py/runtime.h"
-
-#define RAISE_ERRNO(err_flag, error_val) \
-    { if (err_flag == -1) \
-        { nlr_raise(mp_obj_new_exception_arg1(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(error_val))); } }
+#include "py/mphal.h"
 
 STATIC mp_obj_t mod_termios_tcgetattr(mp_obj_t fd_in) {
     struct termios term;
@@ -44,7 +40,7 @@ STATIC mp_obj_t mod_termios_tcgetattr(mp_obj_t fd_in) {
     int res = tcgetattr(fd, &term);
     RAISE_ERRNO(res, errno);
 
-    mp_obj_list_t *r = mp_obj_new_list(7, NULL);
+    mp_obj_list_t *r = MP_OBJ_TO_PTR(mp_obj_new_list(7, NULL));
     r->items[0] = MP_OBJ_NEW_SMALL_INT(term.c_iflag);
     r->items[1] = MP_OBJ_NEW_SMALL_INT(term.c_oflag);
     r->items[2] = MP_OBJ_NEW_SMALL_INT(term.c_cflag);
@@ -52,18 +48,20 @@ STATIC mp_obj_t mod_termios_tcgetattr(mp_obj_t fd_in) {
     r->items[4] = MP_OBJ_NEW_SMALL_INT(cfgetispeed(&term));
     r->items[5] = MP_OBJ_NEW_SMALL_INT(cfgetospeed(&term));
 
-    mp_obj_list_t *cc = mp_obj_new_list(NCCS, NULL);
-    r->items[6] = cc;
+    mp_obj_list_t *cc = MP_OBJ_TO_PTR(mp_obj_new_list(NCCS, NULL));
+    r->items[6] = MP_OBJ_FROM_PTR(cc);
     for (int i = 0; i < NCCS; i++) {
         if (i == VMIN || i == VTIME) {
             cc->items[i] = MP_OBJ_NEW_SMALL_INT(term.c_cc[i]);
         } else {
             // https://docs.python.org/3/library/termios.html says value is *string*,
-            // but no way unicode chars could be there.
-            cc->items[i] = mp_obj_new_bytes(&term.c_cc[i], 1);
+            // but no way unicode chars could be there, if c_cc is defined to be a
+            // a "char". But it's type is actually cc_t, which can be anything.
+            // TODO: For now, we still deal with it like that.
+            cc->items[i] = mp_obj_new_bytes((byte*)&term.c_cc[i], 1);
         }
     }
-    return r;
+    return MP_OBJ_FROM_PTR(r);
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mod_termios_tcgetattr_obj, mod_termios_tcgetattr);
 
@@ -80,20 +78,19 @@ STATIC mp_obj_t mod_termios_tcsetattr(mp_obj_t fd_in, mp_obj_t when_in, mp_obj_t
     }
 
     assert(MP_OBJ_IS_TYPE(attrs_in, &mp_type_list));
-    mp_obj_list_t *attrs = attrs_in;
+    mp_obj_list_t *attrs = MP_OBJ_TO_PTR(attrs_in);
 
     term.c_iflag = mp_obj_get_int(attrs->items[0]);
     term.c_oflag = mp_obj_get_int(attrs->items[1]);
     term.c_cflag = mp_obj_get_int(attrs->items[2]);
     term.c_lflag = mp_obj_get_int(attrs->items[3]);
 
-    mp_obj_list_t *cc = attrs->items[6];
+    mp_obj_list_t *cc = MP_OBJ_TO_PTR(attrs->items[6]);
     for (int i = 0; i < NCCS; i++) {
         if (i == VMIN || i == VTIME) {
             term.c_cc[i] = mp_obj_get_int(cc->items[i]);
         } else {
-            mp_uint_t len;
-            term.c_cc[i] = *mp_obj_str_get_data(cc->items[i], &len);
+            term.c_cc[i] = *mp_obj_str_get_str(cc->items[i]);
         }
     }
 
@@ -126,18 +123,22 @@ STATIC mp_obj_t mod_termios_setraw(mp_obj_t fd_in) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mod_termios_setraw_obj, mod_termios_setraw);
 
-STATIC const mp_map_elem_t mp_module_termios_globals_table[] = {
-    { MP_OBJ_NEW_QSTR(MP_QSTR___name__), MP_OBJ_NEW_QSTR(MP_QSTR_termios) },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_tcgetattr), (mp_obj_t)&mod_termios_tcgetattr_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_tcsetattr), (mp_obj_t)&mod_termios_tcsetattr_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_setraw), (mp_obj_t)&mod_termios_setraw_obj },
+STATIC const mp_rom_map_elem_t mp_module_termios_globals_table[] = {
+    { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_termios) },
+    { MP_ROM_QSTR(MP_QSTR_tcgetattr), MP_ROM_PTR(&mod_termios_tcgetattr_obj) },
+    { MP_ROM_QSTR(MP_QSTR_tcsetattr), MP_ROM_PTR(&mod_termios_tcsetattr_obj) },
+    { MP_ROM_QSTR(MP_QSTR_setraw), MP_ROM_PTR(&mod_termios_setraw_obj) },
 
-#define C(name) { MP_OBJ_NEW_QSTR(MP_QSTR_ ## name), MP_OBJ_NEW_SMALL_INT(name) }
+#define C(name) { MP_ROM_QSTR(MP_QSTR_ ## name), MP_ROM_INT(name) }
     C(TCSANOW),
 
     C(B9600),
+    #ifdef B57600
     C(B57600),
+    #endif
+    #ifdef B115200
     C(B115200),
+    #endif
 #undef C
 };
 
@@ -145,6 +146,5 @@ STATIC MP_DEFINE_CONST_DICT(mp_module_termios_globals, mp_module_termios_globals
 
 const mp_obj_module_t mp_module_termios = {
     .base = { &mp_type_module },
-    .name = MP_QSTR_termios,
     .globals = (mp_obj_dict_t*)&mp_module_termios_globals,
 };

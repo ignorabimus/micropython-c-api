@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -31,22 +31,15 @@
 
 #if MICROPY_ENABLE_GC
 
-#if MICROPY_GCREGS_SETJMP
-#include <setjmp.h>
-
-typedef jmp_buf regs_t;
-
-STATIC void gc_helper_get_regs(regs_t arr) {
-    setjmp(arr);
-}
-
-#else // !MICROPY_GCREGS_SETJMP
+// Even if we have specific support for an architecture, it is
+// possible to force use of setjmp-based implementation.
+#if !MICROPY_GCREGS_SETJMP
 
 // We capture here callee-save registers, i.e. ones which may contain
 // interesting values held there by our callers. It doesn't make sense
 // to capture caller-saved registers, because they, well, put on the
 // stack already by the caller.
-#ifdef __x86_64__
+#if defined(__x86_64__)
 typedef mp_uint_t regs_t[6];
 
 STATIC void gc_helper_get_regs(regs_t arr) {
@@ -77,9 +70,9 @@ STATIC void gc_helper_get_regs(regs_t arr) {
     arr[4] = r14;
     arr[5] = r15;
 }
-#endif
 
-#ifdef __i386__
+#elif defined(__i386__)
+
 typedef mp_uint_t regs_t[4];
 
 STATIC void gc_helper_get_regs(regs_t arr) {
@@ -87,14 +80,26 @@ STATIC void gc_helper_get_regs(regs_t arr) {
     register long esi asm ("esi");
     register long edi asm ("edi");
     register long ebp asm ("ebp");
+#ifdef __clang__
+    // TODO:
+    // This is dirty workaround for Clang. It tries to get around
+    // uncompliant (wrt to GCC) behavior of handling register variables.
+    // Application of this patch here is random, and done only to unbreak
+    // MacOS build. Better, cross-arch ways to deal with Clang issues should
+    // be found.
+    asm("" : "=r"(ebx));
+    asm("" : "=r"(esi));
+    asm("" : "=r"(edi));
+    asm("" : "=r"(ebp));
+#endif
     arr[0] = ebx;
     arr[1] = esi;
     arr[2] = edi;
     arr[3] = ebp;
 }
-#endif
 
-#if defined(__thumb2__) || defined(__thumb__) || defined(__arm__)
+#elif defined(__thumb2__) || defined(__thumb__) || defined(__arm__)
+
 typedef mp_uint_t regs_t[10];
 
 STATIC void gc_helper_get_regs(regs_t arr) {
@@ -119,18 +124,49 @@ STATIC void gc_helper_get_regs(regs_t arr) {
     arr[8] = r12;
     arr[9] = r13;
 }
-#endif
+
+#else
+
+// If we don't have architecture-specific optimized support,
+// just fall back to setjmp-based implementation.
+#undef MICROPY_GCREGS_SETJMP
+#define MICROPY_GCREGS_SETJMP (1)
+
+#endif // Arch-specific selection
 #endif // !MICROPY_GCREGS_SETJMP
+
+// If MICROPY_GCREGS_SETJMP was requested explicitly, or if
+// we enabled it as a fallback above.
+#if MICROPY_GCREGS_SETJMP
+#include <setjmp.h>
+
+typedef jmp_buf regs_t;
+
+STATIC void gc_helper_get_regs(regs_t arr) {
+    setjmp(arr);
+}
+
+#endif // MICROPY_GCREGS_SETJMP
+
+// this function is used by mpthreadport.c
+void gc_collect_regs_and_stack(void);
+
+void gc_collect_regs_and_stack(void) {
+    regs_t regs;
+    gc_helper_get_regs(regs);
+    // GC stack (and regs because we captured them)
+    void **regs_ptr = (void**)(void*)&regs;
+    gc_collect_root(regs_ptr, ((uintptr_t)MP_STATE_THREAD(stack_top) - (uintptr_t)&regs) / sizeof(uintptr_t));
+}
 
 void gc_collect(void) {
     //gc_dump_info();
 
     gc_collect_start();
-    regs_t regs;
-    gc_helper_get_regs(regs);
-    // GC stack (and regs because we captured them)
-    void **regs_ptr = (void**)(void*)&regs;
-    gc_collect_root(regs_ptr, ((mp_uint_t)MP_STATE_VM(stack_top) - (mp_uint_t)&regs) / sizeof(mp_uint_t));
+    gc_collect_regs_and_stack();
+    #if MICROPY_PY_THREAD
+    mp_thread_gc_others();
+    #endif
     #if MICROPY_EMIT_NATIVE && !defined(_MSC_VER)
     mp_unix_mark_exec();
     #endif

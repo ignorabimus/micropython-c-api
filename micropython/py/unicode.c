@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -133,9 +133,11 @@ bool unichar_isalpha(unichar c) {
     return c < 128 && (attr[c] & FL_ALPHA) != 0;
 }
 
+/* unused
 bool unichar_isprint(unichar c) {
     return c < 128 && (attr[c] & FL_PRINT) != 0;
 }
+*/
 
 bool unichar_isdigit(unichar c) {
     return c < 128 && (attr[c] & FL_DIGIT) != 0;
@@ -145,11 +147,9 @@ bool unichar_isxdigit(unichar c) {
     return c < 128 && (attr[c] & FL_XDIGIT) != 0;
 }
 
-/*
-bool unichar_is_alpha_or_digit(unichar c) {
-    return c < 128 && (attr[c] & (FL_ALPHA | FL_DIGIT)) != 0;
+bool unichar_isident(unichar c) {
+    return c < 128 && ((attr[c] & (FL_ALPHA | FL_DIGIT)) != 0 || c == '_');
 }
-*/
 
 bool unichar_isupper(unichar c) {
     return c < 128 && (attr[c] & FL_UPPER) != 0;

@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -29,20 +29,24 @@
 #if MICROPY_NLR_SETJMP
 
 unsigned int nlr_push_dummy(nlr_buf_t *buf) {
-    buf->prev = MP_STATE_VM(nlr_top);
-    MP_STATE_VM(nlr_top) = buf;
+    buf->prev = MP_STATE_THREAD(nlr_top);
+    MP_STATE_THREAD(nlr_top) = buf;
     return 0;
 }
 
 void nlr_pop_dummy(void) {
-    MP_STATE_VM(nlr_top) = MP_STATE_VM(nlr_top)->prev;
+    MP_STATE_THREAD(nlr_top) = MP_STATE_THREAD(nlr_top)->prev;
 }
 
 void nlr_setjmp_jump(void *val) {
-    nlr_buf_t *buf = MP_STATE_VM(nlr_top);
-    MP_STATE_VM(nlr_top) = buf->prev;
-    buf->ret_val = val;
-    longjmp(buf->jmpbuf, 1);
+    nlr_buf_t **top_ptr = &MP_STATE_THREAD(nlr_top);
+    nlr_buf_t *top = *top_ptr;
+    if (top == NULL) {
+        nlr_jump_fail(val);
+    }
+    top->ret_val = val;
+    *top_ptr = top->prev;
+    longjmp(top->jmpbuf, 1);
 }
 
 #endif

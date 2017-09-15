@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -24,9 +24,13 @@
  * THE SOFTWARE.
  */
 
-#include "unix/unix_mphal.h"
+#include "sleep.h"
+#include "unix/mphalport.h"
 
 #define MICROPY_HAL_HAS_VT100 (0)
 
 void mp_hal_move_cursor_back(unsigned int pos);
 void mp_hal_erase_line_from_cursor(unsigned int n_chars_to_erase);
+
+#undef mp_hal_ticks_cpu
+mp_uint_t mp_hal_ticks_cpu(void);

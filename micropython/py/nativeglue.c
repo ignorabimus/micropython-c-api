@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -34,49 +34,59 @@
 #include "py/emitglue.h"
 #include "py/bc.h"
 
-#if MICROPY_EMIT_NATIVE
-
-#if 0 // print debugging info
+#if MICROPY_DEBUG_VERBOSE // print debugging info
 #define DEBUG_printf DEBUG_printf
 #else // don't print debugging info
 #define DEBUG_printf(...) (void)0
 #endif
 
-// convert a Micro Python object to a valid native value based on type
+#if MICROPY_EMIT_NATIVE
+
+// convert a MicroPython object to a valid native value based on type
 mp_uint_t mp_convert_obj_to_native(mp_obj_t obj, mp_uint_t type) {
     DEBUG_printf("mp_convert_obj_to_native(%p, " UINT_FMT ")\n", obj, type);
-    switch (type & 3) {
+    switch (type & 0xf) {
         case MP_NATIVE_TYPE_OBJ: return (mp_uint_t)obj;
         case MP_NATIVE_TYPE_BOOL:
-        case MP_NATIVE_TYPE_INT: return mp_obj_get_int(obj);
-        case MP_NATIVE_TYPE_UINT: {
+        case MP_NATIVE_TYPE_INT:
+        case MP_NATIVE_TYPE_UINT: return mp_obj_get_int_truncated(obj);
+        default: { // cast obj to a pointer
             mp_buffer_info_t bufinfo;
             if (mp_get_buffer(obj, &bufinfo, MP_BUFFER_RW)) {
                 return (mp_uint_t)bufinfo.buf;
             } else {
-                // TODO should be mp_obj_get_uint_truncated or something
-                return mp_obj_get_int(obj);
+                // assume obj is an integer that represents an address
+                return mp_obj_get_int_truncated(obj);
             }
         }
-        default: assert(0); return 0;
     }
 }
 
-// convert a native value to a Micro Python object based on type
+#endif
+
+#if MICROPY_EMIT_NATIVE || MICROPY_EMIT_INLINE_ASM
+
+// convert a native value to a MicroPython object based on type
 mp_obj_t mp_convert_native_to_obj(mp_uint_t val, mp_uint_t type) {
     DEBUG_printf("mp_convert_native_to_obj(" UINT_FMT ", " UINT_FMT ")\n", val, type);
-    switch (type & 3) {
+    switch (type & 0xf) {
         case MP_NATIVE_TYPE_OBJ: return (mp_obj_t)val;
         case MP_NATIVE_TYPE_BOOL: return mp_obj_new_bool(val);
         case MP_NATIVE_TYPE_INT: return mp_obj_new_int(val);
         case MP_NATIVE_TYPE_UINT: return mp_obj_new_int_from_uint(val);
-        default: assert(0); return mp_const_none;
+        default: // a pointer
+            // we return just the value of the pointer as an integer
+            return mp_obj_new_int_from_uint(val);
     }
 }
 
+#endif
+
+#if MICROPY_EMIT_NATIVE
+
 // wrapper that accepts n_args and n_kw in one argument
 // (native emitter can only pass at most 3 arguments to a function)
-mp_obj_t mp_native_call_function_n_kw(mp_obj_t fun_in, mp_uint_t n_args_kw, const mp_obj_t *args) {
+mp_obj_t mp_native_call_function_n_kw(mp_obj_t fun_in, size_t n_args_kw, const mp_obj_t *args) {
     return mp_call_function_n_kw(fun_in, n_args_kw & 0xff, (n_args_kw >> 8) & 0xff, args);
 }
 
@@ -88,6 +98,32 @@ void mp_native_raise(mp_obj_t o) {
     }
 }
 
+// wrapper that handles iterator buffer
+STATIC mp_obj_t mp_native_getiter(mp_obj_t obj, mp_obj_iter_buf_t *iter) {
+    if (iter == NULL) {
+        return mp_getiter(obj, NULL);
+    } else {
+        obj = mp_getiter(obj, iter);
+        if (obj != MP_OBJ_FROM_PTR(iter)) {
+            // Iterator didn't use the stack so indicate that with MP_OBJ_NULL.
+            iter->base.type = MP_OBJ_NULL;
+            iter->buf[0] = obj;
+        }
+        return NULL;
+    }
+}
+
+// wrapper that handles iterator buffer
+STATIC mp_obj_t mp_native_iternext(mp_obj_iter_buf_t *iter) {
+    mp_obj_t obj;
+    if (iter->base.type == MP_OBJ_NULL) {
+        obj = iter->buf[0];
+    } else {
+        obj = MP_OBJ_FROM_PTR(iter);
+    }
+    return mp_iternext(obj);
+}
+
 // these must correspond to the respective enum in runtime0.h
 void *const mp_fun_table[MP_F_NUMBER_OF] = {
     mp_convert_obj_to_native,
@@ -97,6 +133,7 @@ void *const mp_fun_table[MP_F_NUMBER_OF] = {
     mp_load_build_class,
     mp_load_attr,
     mp_load_method,
+    mp_load_super_method,
     mp_store_name,
     mp_store_global,
     mp_store_attr,
@@ -117,8 +154,8 @@ void *const mp_fun_table[MP_F_NUMBER_OF] = {
     mp_native_call_function_n_kw,
     mp_call_method_n_kw,
     mp_call_method_n_kw_var,
-    mp_getiter,
-    mp_iternext,
+    mp_native_getiter,
+    mp_native_iternext,
 #if MICROPY_NLR_SETJMP
     nlr_push_dummy,
     nlr_pop_dummy,

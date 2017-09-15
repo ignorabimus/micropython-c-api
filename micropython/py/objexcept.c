@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -36,9 +36,10 @@
 #include "py/objtype.h"
 #include "py/runtime.h"
 #include "py/gc.h"
+#include "py/mperrno.h"
 
 // Instance of MemoryError exception - needed by mp_malloc_fail
-const mp_obj_exception_t mp_const_MemoryError_obj = {{&mp_type_MemoryError}, 0, 0, MP_OBJ_NULL, mp_const_empty_tuple};
+const mp_obj_exception_t mp_const_MemoryError_obj = {{&mp_type_MemoryError}, 0, 0, NULL, (mp_obj_tuple_t*)&mp_const_empty_tuple_obj};
 
 // Optionally allocated buffer for storing the first argument of an exception
 // allocated when the heap is locked.
@@ -88,10 +89,10 @@ mp_obj_t mp_alloc_emergency_exception_buf(mp_obj_t size_in) {
 // Instance of GeneratorExit exception - needed by generator.close()
 // This would belong to objgenerator.c, but to keep mp_obj_exception_t
 // definition module-private so far, have it here.
-const mp_obj_exception_t mp_const_GeneratorExit_obj = {{&mp_type_GeneratorExit}, 0, 0, MP_OBJ_NULL, mp_const_empty_tuple};
+const mp_obj_exception_t mp_const_GeneratorExit_obj = {{&mp_type_GeneratorExit}, 0, 0, NULL, (mp_obj_tuple_t*)&mp_const_empty_tuple_obj};
 
 STATIC void mp_obj_exception_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kind_t kind) {
-    mp_obj_exception_t *o = o_in;
+    mp_obj_exception_t *o = MP_OBJ_TO_PTR(o_in);
     mp_print_kind_t k = kind & ~PRINT_EXC_SUBCLASS;
     bool is_subclass = kind & PRINT_EXC_SUBCLASS;
     if (!is_subclass && (k == PRINT_REPR || k == PRINT_EXC)) {
@@ -107,32 +108,42 @@ STATIC void mp_obj_exception_print(const mp_print_t *print, mp_obj_t o_in, mp_pr
             mp_print_str(print, "");
             return;
         } else if (o->args->len == 1) {
+            #if MICROPY_PY_UERRNO
+            // try to provide a nice OSError error message
+            if (o->base.type == &mp_type_OSError && MP_OBJ_IS_SMALL_INT(o->args->items[0])) {
+                qstr qst = mp_errno_to_str(o->args->items[0]);
+                if (qst != MP_QSTR_NULL) {
+                    mp_printf(print, "[Errno %d] %q", MP_OBJ_SMALL_INT_VALUE(o->args->items[0]), qst);
+                    return;
+                }
+            }
+            #endif
             mp_obj_print_helper(print, o->args->items[0], PRINT_STR);
             return;
         }
     }
-    mp_obj_tuple_print(print, o->args, kind);
+    mp_obj_tuple_print(print, MP_OBJ_FROM_PTR(o->args), kind);
 }
 
-mp_obj_t mp_obj_exception_make_new(mp_obj_t type_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args) {
+mp_obj_t mp_obj_exception_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 0, MP_OBJ_FUN_ARGS_MAX, false);
     mp_obj_exception_t *o = m_new_obj_var_maybe(mp_obj_exception_t, mp_obj_t, 0);
     if (o == NULL) {
         // Couldn't allocate heap memory; use local data instead.
         o = &MP_STATE_VM(mp_emergency_exception_obj);
         // We can't store any args.
-        o->args = mp_const_empty_tuple;
+        o->args = (mp_obj_tuple_t*)&mp_const_empty_tuple_obj;
     } else {
-        o->args = mp_obj_new_tuple(n_args, args);
+        o->args = MP_OBJ_TO_PTR(mp_obj_new_tuple(n_args, args));
     }
-    o->base.type = type_in;
+    o->base.type = type;
     o->traceback_data = NULL;
-    return o;
+    return MP_OBJ_FROM_PTR(o);
 }
 
 // Get exception "value" - that is, first argument, or None
 mp_obj_t mp_obj_exception_get_value(mp_obj_t self_in) {
-    mp_obj_exception_t *self = self_in;
+    mp_obj_exception_t *self = MP_OBJ_TO_PTR(self_in);
     if (self->args->len == 0) {
         return mp_const_none;
     } else {
@@ -141,28 +152,38 @@ mp_obj_t mp_obj_exception_get_value(mp_obj_t self_in) {
 }
 
 STATIC void exception_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+    mp_obj_exception_t *self = MP_OBJ_TO_PTR(self_in);
     if (dest[0] != MP_OBJ_NULL) {
-        // not load attribute
+        // store/delete attribute
+        if (attr == MP_QSTR___traceback__ && dest[1] == mp_const_none) {
+            // We allow 'exc.__traceback__ = None' assignment as low-level
+            // optimization of pre-allocating exception instance and raising
+            // it repeatedly - this avoids memory allocation during raise.
+            // However, uPy will keep adding traceback entries to such
+            // exception instance, so before throwing it, traceback should
+            // be cleared like above.
+            self->traceback_len = 0;
+            dest[0] = MP_OBJ_NULL; // indicate success
+        }
         return;
     }
-    mp_obj_exception_t *self = self_in;
     if (attr == MP_QSTR_args) {
-        dest[0] = self->args;
+        dest[0] = MP_OBJ_FROM_PTR(self->args);
     } else if (self->base.type == &mp_type_StopIteration && attr == MP_QSTR_value) {
-        dest[0] = mp_obj_exception_get_value(self);
+        dest[0] = mp_obj_exception_get_value(self_in);
     }
 }
 
-STATIC mp_obj_t exc___init__(mp_uint_t n_args, const mp_obj_t *args) {
-    mp_obj_exception_t *self = args[0];
+STATIC mp_obj_t exc___init__(size_t n_args, const mp_obj_t *args) {
+    mp_obj_exception_t *self = MP_OBJ_TO_PTR(args[0]);
     mp_obj_t argst = mp_obj_new_tuple(n_args - 1, args + 1);
-    self->args = argst;
+    self->args = MP_OBJ_TO_PTR(argst);
     return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(exc___init___obj, 1, MP_OBJ_FUN_ARGS_MAX, exc___init__);
 
-STATIC const mp_map_elem_t exc_locals_dict_table[] = {
-    { MP_OBJ_NEW_QSTR(MP_QSTR___init__), (mp_obj_t)&exc___init___obj },
+STATIC const mp_rom_map_elem_t exc_locals_dict_table[] = {
+    { MP_ROM_QSTR(MP_QSTR___init__), MP_ROM_PTR(&exc___init___obj) },
 };
 
 STATIC MP_DEFINE_CONST_DICT(exc_locals_dict, exc_locals_dict_table);
@@ -173,11 +194,8 @@ const mp_obj_type_t mp_type_BaseException = {
     .print = mp_obj_exception_print,
     .make_new = mp_obj_exception_make_new,
     .attr = exception_attr,
-    .locals_dict = (mp_obj_t)&exc_locals_dict,
+    .locals_dict = (mp_obj_dict_t*)&exc_locals_dict,
 };
-
-#define MP_DEFINE_EXCEPTION_BASE(base_name) \
-STATIC const mp_obj_tuple_t mp_type_ ## base_name ## _base_tuple = {{&mp_type_tuple}, 1, {(mp_obj_t)&mp_type_ ## base_name}};\
 
 #define MP_DEFINE_EXCEPTION(exc_name, base_name) \
 const mp_obj_type_t mp_type_ ## exc_name = { \
@@ -186,20 +204,20 @@ const mp_obj_type_t mp_type_ ## exc_name = { \
     .print = mp_obj_exception_print, \
     .make_new = mp_obj_exception_make_new, \
     .attr = exception_attr, \
-    .bases_tuple = (mp_obj_t)&mp_type_ ## base_name ## _base_tuple, \
+    .parent = &mp_type_ ## base_name, \
 };
 
 // List of all exceptions, arranged as in the table at:
 // http://docs.python.org/3/library/exceptions.html
-MP_DEFINE_EXCEPTION_BASE(BaseException)
 MP_DEFINE_EXCEPTION(SystemExit, BaseException)
 MP_DEFINE_EXCEPTION(KeyboardInterrupt, BaseException)
 MP_DEFINE_EXCEPTION(GeneratorExit, BaseException)
 MP_DEFINE_EXCEPTION(Exception, BaseException)
-  MP_DEFINE_EXCEPTION_BASE(Exception)
+  #if MICROPY_PY_ASYNC_AWAIT
+  MP_DEFINE_EXCEPTION(StopAsyncIteration, Exception)
+  #endif
   MP_DEFINE_EXCEPTION(StopIteration, Exception)
   MP_DEFINE_EXCEPTION(ArithmeticError, Exception)
-    MP_DEFINE_EXCEPTION_BASE(ArithmeticError)
     //MP_DEFINE_EXCEPTION(FloatingPointError, ArithmeticError)
     MP_DEFINE_EXCEPTION(OverflowError, ArithmeticError)
     MP_DEFINE_EXCEPTION(ZeroDivisionError, ArithmeticError)
@@ -211,18 +229,15 @@ MP_DEFINE_EXCEPTION(Exception, BaseException)
   MP_DEFINE_EXCEPTION(ImportError, Exception)
   //MP_DEFINE_EXCEPTION(IOError, Exception) use OSError instead
   MP_DEFINE_EXCEPTION(LookupError, Exception)
-    MP_DEFINE_EXCEPTION_BASE(LookupError)
     MP_DEFINE_EXCEPTION(IndexError, LookupError)
     MP_DEFINE_EXCEPTION(KeyError, LookupError)
   MP_DEFINE_EXCEPTION(MemoryError, Exception)
   MP_DEFINE_EXCEPTION(NameError, Exception)
     /*
-    MP_DEFINE_EXCEPTION_BASE(NameError)
     MP_DEFINE_EXCEPTION(UnboundLocalError, NameError)
     */
   MP_DEFINE_EXCEPTION(OSError, Exception)
 #if MICROPY_PY_BUILTINS_TIMEOUTERROR
-    MP_DEFINE_EXCEPTION_BASE(OSError)
     MP_DEFINE_EXCEPTION(TimeoutError, OSError)
 #endif
     /*
@@ -243,30 +258,24 @@ MP_DEFINE_EXCEPTION(Exception, BaseException)
     MP_DEFINE_EXCEPTION(ReferenceError, Exception)
     */
   MP_DEFINE_EXCEPTION(RuntimeError, Exception)
-    MP_DEFINE_EXCEPTION_BASE(RuntimeError)
     MP_DEFINE_EXCEPTION(NotImplementedError, RuntimeError)
   MP_DEFINE_EXCEPTION(SyntaxError, Exception)
-    MP_DEFINE_EXCEPTION_BASE(SyntaxError)
     MP_DEFINE_EXCEPTION(IndentationError, SyntaxError)
     /*
-      MP_DEFINE_EXCEPTION_BASE(IndentationError)
       MP_DEFINE_EXCEPTION(TabError, IndentationError)
       */
   //MP_DEFINE_EXCEPTION(SystemError, Exception)
   MP_DEFINE_EXCEPTION(TypeError, Exception)
 #if MICROPY_EMIT_NATIVE
-    MP_DEFINE_EXCEPTION_BASE(TypeError)
     MP_DEFINE_EXCEPTION(ViperTypeError, TypeError)
 #endif
   MP_DEFINE_EXCEPTION(ValueError, Exception)
 #if MICROPY_PY_BUILTINS_STR_UNICODE
-    MP_DEFINE_EXCEPTION_BASE(ValueError)
     MP_DEFINE_EXCEPTION(UnicodeError, ValueError)
     //TODO: Implement more UnicodeError subclasses which take arguments
 #endif
   /*
   MP_DEFINE_EXCEPTION(Warning, Exception)
-    MP_DEFINE_EXCEPTION_BASE(Warning)
     MP_DEFINE_EXCEPTION(DeprecationWarning, Warning)
     MP_DEFINE_EXCEPTION(PendingDeprecationWarning, Warning)
     MP_DEFINE_EXCEPTION(RuntimeWarning, Warning)
@@ -288,9 +297,9 @@ mp_obj_t mp_obj_new_exception_arg1(const mp_obj_type_t *exc_type, mp_obj_t arg) 
     return mp_obj_new_exception_args(exc_type, 1, &arg);
 }
 
-mp_obj_t mp_obj_new_exception_args(const mp_obj_type_t *exc_type, mp_uint_t n_args, const mp_obj_t *args) {
+mp_obj_t mp_obj_new_exception_args(const mp_obj_type_t *exc_type, size_t n_args, const mp_obj_t *args) {
     assert(exc_type->make_new == mp_obj_exception_make_new);
-    return exc_type->make_new((mp_obj_t)exc_type, n_args, 0, args);
+    return exc_type->make_new(exc_type, n_args, 0, args);
 }
 
 mp_obj_t mp_obj_new_exception_msg(const mp_obj_type_t *exc_type, const char *msg) {
@@ -309,7 +318,7 @@ mp_obj_t mp_obj_new_exception_msg_varg(const mp_obj_type_t *exc_type, const char
         o = &MP_STATE_VM(mp_emergency_exception_obj);
         o->base.type = exc_type;
         o->traceback_data = NULL;
-        o->args = mp_const_empty_tuple;
+        o->args = (mp_obj_tuple_t*)&mp_const_empty_tuple_obj;
 
 #if MICROPY_ENABLE_EMERGENCY_EXCEPTION_BUF
         // If the user has provided a buffer, then we try to create a tuple
@@ -321,10 +330,10 @@ mp_obj_t mp_obj_new_exception_msg_varg(const mp_obj_type_t *exc_type, const char
 
             tuple->base.type = &mp_type_tuple;
             tuple->len = 1;
-            tuple->items[0] = str;
+            tuple->items[0] = MP_OBJ_FROM_PTR(str);
 
             byte *str_data = (byte *)&str[1];
-            uint max_len = MP_STATE_VM(mp_emergency_exception_buf) + mp_emergency_exception_buf_size
+            size_t max_len = (byte*)MP_STATE_VM(mp_emergency_exception_buf) + mp_emergency_exception_buf_size
                          - str_data;
 
             vstr_t vstr;
@@ -342,14 +351,14 @@ mp_obj_t mp_obj_new_exception_msg_varg(const mp_obj_type_t *exc_type, const char
 
             o->args = tuple;
 
-            uint offset = &str_data[str->len] - MP_STATE_VM(mp_emergency_exception_buf);
+            size_t offset = &str_data[str->len] - (byte*)MP_STATE_VM(mp_emergency_exception_buf);
             offset += sizeof(void *) - 1;
             offset &= ~(sizeof(void *) - 1);
 
-            if ((mp_emergency_exception_buf_size - offset) > (sizeof(mp_uint_t) * 3)) {
+            if ((mp_emergency_exception_buf_size - offset) > (sizeof(o->traceback_data[0]) * 3)) {
                 // We have room to store some traceback.
-                o->traceback_data = (mp_uint_t*)((byte *)MP_STATE_VM(mp_emergency_exception_buf) + offset);
-                o->traceback_alloc = (MP_STATE_VM(mp_emergency_exception_buf) + mp_emergency_exception_buf_size - (byte *)o->traceback_data) / sizeof(o->traceback_data[0]);
+                o->traceback_data = (size_t*)((byte *)MP_STATE_VM(mp_emergency_exception_buf) + offset);
+                o->traceback_alloc = ((byte*)MP_STATE_VM(mp_emergency_exception_buf) + mp_emergency_exception_buf_size - (byte *)o->traceback_data) / sizeof(o->traceback_data[0]);
                 o->traceback_len = 0;
             }
         }
@@ -357,12 +366,10 @@ mp_obj_t mp_obj_new_exception_msg_varg(const mp_obj_type_t *exc_type, const char
     } else {
         o->base.type = exc_type;
         o->traceback_data = NULL;
-        o->args = mp_obj_new_tuple(1, NULL);
+        o->args = MP_OBJ_TO_PTR(mp_obj_new_tuple(1, NULL));
 
-        if (fmt == NULL) {
-            // no message
-            assert(0);
-        } else {
+        assert(fmt != NULL);
+        {
             if (strchr(fmt, '%') == NULL) {
                 // no formatting substitutions, avoid allocating vstr.
                 o->args->items[0] = mp_obj_new_str(fmt, strlen(fmt), false);
@@ -379,24 +386,24 @@ mp_obj_t mp_obj_new_exception_msg_varg(const mp_obj_type_t *exc_type, const char
         }
     }
 
-    return o;
+    return MP_OBJ_FROM_PTR(o);
 }
 
 // return true if the given object is an exception type
 bool mp_obj_is_exception_type(mp_obj_t self_in) {
     if (MP_OBJ_IS_TYPE(self_in, &mp_type_type)) {
         // optimisation when self_in is a builtin exception
-        mp_obj_type_t *self = self_in;
+        mp_obj_type_t *self = MP_OBJ_TO_PTR(self_in);
         if (self->make_new == mp_obj_exception_make_new) {
             return true;
         }
     }
-    return mp_obj_is_subclass_fast(self_in, &mp_type_BaseException);
+    return mp_obj_is_subclass_fast(self_in, MP_OBJ_FROM_PTR(&mp_type_BaseException));
 }
 
 // return true if the given object is an instance of an exception type
 bool mp_obj_is_exception_instance(mp_obj_t self_in) {
-    return mp_obj_is_exception_type(mp_obj_get_type(self_in));
+    return mp_obj_is_exception_type(MP_OBJ_FROM_PTR(mp_obj_get_type(self_in)));
 }
 
 // Return true if exception (type or instance) is a subclass of given
@@ -405,7 +412,7 @@ bool mp_obj_is_exception_instance(mp_obj_t self_in) {
 bool mp_obj_exception_match(mp_obj_t exc, mp_const_obj_t exc_type) {
     // if exc is an instance of an exception, then extract and use its type
     if (mp_obj_is_exception_instance(exc)) {
-        exc = mp_obj_get_type(exc);
+        exc = MP_OBJ_FROM_PTR(mp_obj_get_type(exc));
     }
     return mp_obj_is_subclass_fast(exc, exc_type);
 }
@@ -417,9 +424,9 @@ bool mp_obj_exception_match(mp_obj_t exc, mp_const_obj_t exc_type) {
     assert(mp_obj_is_exception_instance(self_in)); \
     mp_obj_exception_t *self; \
     if (mp_obj_is_native_exception_instance(self_in)) { \
-        self = self_in; \
+        self = MP_OBJ_TO_PTR(self_in); \
     } else { \
-        self = ((mp_obj_instance_t*)self_in)->subobj[0]; \
+        self = MP_OBJ_TO_PTR(((mp_obj_instance_t*)MP_OBJ_TO_PTR(self_in))->subobj[0]); \
     }
 
 void mp_obj_exception_clear_traceback(mp_obj_t self_in) {
@@ -429,14 +436,14 @@ void mp_obj_exception_clear_traceback(mp_obj_t self_in) {
     self->traceback_data = NULL;
 }
 
-void mp_obj_exception_add_traceback(mp_obj_t self_in, qstr file, mp_uint_t line, qstr block) {
+void mp_obj_exception_add_traceback(mp_obj_t self_in, qstr file, size_t line, qstr block) {
     GET_NATIVE_EXCEPTION(self, self_in);
 
     // append this traceback info to traceback data
     // if memory allocation fails (eg because gc is locked), just return
 
     if (self->traceback_data == NULL) {
-        self->traceback_data = m_new_maybe(mp_uint_t, 3);
+        self->traceback_data = m_new_maybe(size_t, 3);
         if (self->traceback_data == NULL) {
             return;
         }
@@ -444,7 +451,7 @@ void mp_obj_exception_add_traceback(mp_obj_t self_in, qstr file, mp_uint_t line,
         self->traceback_len = 0;
     } else if (self->traceback_len + 3 > self->traceback_alloc) {
         // be conservative with growing traceback data
-        mp_uint_t *tb_data = m_renew_maybe(mp_uint_t, self->traceback_data, self->traceback_alloc, self->traceback_alloc + 3, true);
+        size_t *tb_data = m_renew_maybe(size_t, self->traceback_data, self->traceback_alloc, self->traceback_alloc + 3, true);
         if (tb_data == NULL) {
             return;
         }
@@ -452,14 +459,14 @@ void mp_obj_exception_add_traceback(mp_obj_t self_in, qstr file, mp_uint_t line,
         self->traceback_alloc += 3;
     }
 
-    mp_uint_t *tb_data = &self->traceback_data[self->traceback_len];
+    size_t *tb_data = &self->traceback_data[self->traceback_len];
     self->traceback_len += 3;
-    tb_data[0] = (mp_uint_t)file;
-    tb_data[1] = (mp_uint_t)line;
-    tb_data[2] = (mp_uint_t)block;
+    tb_data[0] = file;
+    tb_data[1] = line;
+    tb_data[2] = block;
 }
 
-void mp_obj_exception_get_traceback(mp_obj_t self_in, mp_uint_t *n, mp_uint_t **values) {
+void mp_obj_exception_get_traceback(mp_obj_t self_in, size_t *n, size_t **values) {
     GET_NATIVE_EXCEPTION(self, self_in);
 
     if (self->traceback_data == NULL) {

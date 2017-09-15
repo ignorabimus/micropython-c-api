@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -23,19 +23,24 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_RUNTIME0_H__
-#define __MICROPY_INCLUDED_PY_RUNTIME0_H__
+#ifndef MICROPY_INCLUDED_PY_RUNTIME0_H
+#define MICROPY_INCLUDED_PY_RUNTIME0_H
 
 // These must fit in 8 bits; see scope.h
 #define MP_SCOPE_FLAG_VARARGS      (0x01)
 #define MP_SCOPE_FLAG_VARKEYWORDS  (0x02)
 #define MP_SCOPE_FLAG_GENERATOR    (0x04)
+#define MP_SCOPE_FLAG_DEFKWARGS    (0x08)
 
 // types for native (viper) function signature
 #define MP_NATIVE_TYPE_OBJ  (0x00)
 #define MP_NATIVE_TYPE_BOOL (0x01)
 #define MP_NATIVE_TYPE_INT  (0x02)
 #define MP_NATIVE_TYPE_UINT (0x03)
+#define MP_NATIVE_TYPE_PTR  (0x04)
+#define MP_NATIVE_TYPE_PTR8 (0x05)
+#define MP_NATIVE_TYPE_PTR16 (0x06)
+#define MP_NATIVE_TYPE_PTR32 (0x07)
 
 typedef enum {
     MP_UNARY_OP_BOOL, // __bool__
@@ -44,9 +49,8 @@ typedef enum {
     MP_UNARY_OP_POSITIVE,
     MP_UNARY_OP_NEGATIVE,
     MP_UNARY_OP_INVERT,
-    // The NOT op is only implemented by bool.  The emitter must synthesise NOT
-    // for other types by calling BOOL then inverting (eg by then calling NOT).
     MP_UNARY_OP_NOT,
+    MP_UNARY_OP_SIZEOF, // for sys.getsizeof()
 } mp_unary_op_t;
 
 typedef enum {
@@ -104,6 +108,7 @@ typedef enum {
     MP_F_LOAD_BUILD_CLASS,
     MP_F_LOAD_ATTR,
     MP_F_LOAD_METHOD,
+    MP_F_LOAD_SUPER_METHOD,
     MP_F_STORE_NAME,
     MP_F_STORE_GLOBAL,
     MP_F_STORE_ATTR,
@@ -124,8 +129,8 @@ typedef enum {
     MP_F_NATIVE_CALL_FUNCTION_N_KW,
     MP_F_CALL_METHOD_N_KW,
     MP_F_CALL_METHOD_N_KW_VAR,
-    MP_F_GETITER,
-    MP_F_ITERNEXT,
+    MP_F_NATIVE_GETITER,
+    MP_F_NATIVE_ITERNEXT,
     MP_F_NLR_PUSH,
     MP_F_NLR_POP,
     MP_F_NATIVE_RAISE,
@@ -147,4 +152,4 @@ typedef enum {
 
 extern void *const mp_fun_table[MP_F_NUMBER_OF];
 
-#endif // __MICROPY_INCLUDED_PY_RUNTIME0_H__
+#endif // MICROPY_INCLUDED_PY_RUNTIME0_H

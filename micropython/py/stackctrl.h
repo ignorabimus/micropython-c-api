@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -23,12 +23,13 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_STACKCTRL_H__
-#define __MICROPY_INCLUDED_PY_STACKCTRL_H__
+#ifndef MICROPY_INCLUDED_PY_STACKCTRL_H
+#define MICROPY_INCLUDED_PY_STACKCTRL_H
 
 #include "py/mpconfig.h"
 
 void mp_stack_ctrl_init(void);
+void mp_stack_set_top(void *top);
 mp_uint_t mp_stack_usage(void);
 
 #if MICROPY_STACK_CHECK
@@ -44,4 +45,4 @@ void mp_stack_check(void);
 
 #endif
 
-#endif // __MICROPY_INCLUDED_PY_STACKCTRL_H__
+#endif // MICROPY_INCLUDED_PY_STACKCTRL_H

@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -32,7 +32,7 @@
 #include "py/misc.h"
 #include "py/mpstate.h"
 
-#if 0 // print debugging info
+#if MICROPY_DEBUG_VERBOSE // print debugging info
 #define DEBUG_printf DEBUG_printf
 #else // don't print debugging info
 #define DEBUG_printf(...) (void)0
@@ -46,7 +46,7 @@
 #include "py/gc.h"
 
 // We redirect standard alloc functions to GC heap - just for the rest of
-// this module. In the rest of micropython source, system malloc can be
+// this module. In the rest of MicroPython source, system malloc can be
 // freely accessed - for interfacing with system and 3rd-party libs for
 // example. On the other hand, some (e.g. bare-metal) ports may use GC
 // heap as system heap, so, to avoid warnings, we do undef's first.
@@ -59,7 +59,16 @@
 #define realloc(ptr, n) gc_realloc(ptr, n, true)
 #define realloc_ext(ptr, n, mv) gc_realloc(ptr, n, mv)
 #else
-#define realloc_ext(ptr, n, mv) realloc(ptr, n)
+STATIC void *realloc_ext(void *ptr, size_t n_bytes, bool allow_move) {
+    if (allow_move) {
+        return realloc(ptr, n_bytes);
+    } else {
+        // We are asked to resize, but without moving the memory region pointed to
+        // by ptr.  Unless the underlying memory manager has special provision for
+        // this behaviour there is nothing we can do except fail to resize.
+        return NULL;
+    }
+}
 #endif // MICROPY_ENABLE_GC
 
 void *m_malloc(size_t num_bytes) {
@@ -108,7 +117,10 @@ void *m_malloc0(size_t num_bytes) {
     if (ptr == NULL && num_bytes != 0) {
         return m_malloc_fail(num_bytes);
     }
+    // If this config is set then the GC clears all memory, so we don't need to.
+    #if !MICROPY_GC_CONSERVATIVE_CLEAR
     memset(ptr, 0, num_bytes);
+    #endif
     return ptr;
 }
 

@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -26,6 +26,7 @@
 
 // This code glues the code emitters to the runtime.
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -34,7 +35,7 @@
 #include "py/runtime0.h"
 #include "py/bc.h"
 
-#if 0 // print debugging info
+#if MICROPY_DEBUG_VERBOSE // print debugging info
 #define DEBUG_PRINT (1)
 #define WRITE_CODE (1)
 #define DEBUG_printf DEBUG_printf
@@ -44,22 +45,9 @@
 #define DEBUG_OP_printf(...) (void)0
 #endif
 
-struct _mp_raw_code_t {
-    mp_raw_code_kind_t kind : 3;
-    mp_uint_t scope_flags : 7;
-    mp_uint_t n_pos_args : 11;
-    mp_uint_t n_kwonly_args : 11;
-    union {
-        struct {
-            byte *code;
-            mp_uint_t len;
-        } u_byte;
-        struct {
-            void *fun_data;
-            mp_uint_t type_sig; // for viper, compressed as 2-bit types; ret is MSB, then arg0, arg1, etc
-        } u_native;
-    } data;
-};
+#if MICROPY_DEBUG_PRINTERS
+mp_uint_t mp_verbose_flag = 0;
+#endif
 
 mp_raw_code_t *mp_emit_glue_new_raw_code(void) {
     mp_raw_code_t *rc = m_new0(mp_raw_code_t, 1);
@@ -67,36 +55,45 @@ mp_raw_code_t *mp_emit_glue_new_raw_code(void) {
     return rc;
 }
 
-void mp_emit_glue_assign_bytecode(mp_raw_code_t *rc, byte *code, mp_uint_t len, mp_uint_t n_pos_args, mp_uint_t n_kwonly_args, mp_uint_t scope_flags) {
+void mp_emit_glue_assign_bytecode(mp_raw_code_t *rc, const byte *code, mp_uint_t len,
+    const mp_uint_t *const_table,
+    #if MICROPY_PERSISTENT_CODE_SAVE
+    uint16_t n_obj, uint16_t n_raw_code,
+    #endif
+    mp_uint_t scope_flags) {
+
     rc->kind = MP_CODE_BYTECODE;
     rc->scope_flags = scope_flags;
-    rc->n_pos_args = n_pos_args;
-    rc->n_kwonly_args = n_kwonly_args;
-    rc->data.u_byte.code = code;
-    rc->data.u_byte.len = len;
+    rc->data.u_byte.bytecode = code;
+    rc->data.u_byte.const_table = const_table;
+    #if MICROPY_PERSISTENT_CODE_SAVE
+    rc->data.u_byte.bc_len = len;
+    rc->data.u_byte.n_obj = n_obj;
+    rc->data.u_byte.n_raw_code = n_raw_code;
+    #endif
 
 #ifdef DEBUG_PRINT
-    DEBUG_printf("assign byte code: code=%p len=" UINT_FMT " n_pos_args=" UINT_FMT " n_kwonly_args=" UINT_FMT " flags=%x\n", code, len, n_pos_args, n_kwonly_args, (uint)scope_flags);
+    DEBUG_printf("assign byte code: code=%p len=" UINT_FMT " flags=%x\n", code, len, (uint)scope_flags);
 #endif
 #if MICROPY_DEBUG_PRINTERS
     if (mp_verbose_flag >= 2) {
-        mp_bytecode_print(rc, n_pos_args + n_kwonly_args, code, len);
+        mp_bytecode_print(rc, code, len, const_table);
     }
 #endif
 }
 
-#if MICROPY_EMIT_NATIVE || MICROPY_EMIT_INLINE_THUMB
-void mp_emit_glue_assign_native(mp_raw_code_t *rc, mp_raw_code_kind_t kind, void *fun_data, mp_uint_t fun_len, mp_uint_t n_pos_args, mp_uint_t n_kwonly_args, mp_uint_t scope_flags, mp_uint_t type_sig) {
+#if MICROPY_EMIT_NATIVE || MICROPY_EMIT_INLINE_ASM
+void mp_emit_glue_assign_native(mp_raw_code_t *rc, mp_raw_code_kind_t kind, void *fun_data, mp_uint_t fun_len, const mp_uint_t *const_table, mp_uint_t n_pos_args, mp_uint_t scope_flags, mp_uint_t type_sig) {
     assert(kind == MP_CODE_NATIVE_PY || kind == MP_CODE_NATIVE_VIPER || kind == MP_CODE_NATIVE_ASM);
     rc->kind = kind;
     rc->scope_flags = scope_flags;
     rc->n_pos_args = n_pos_args;
-    rc->n_kwonly_args = n_kwonly_args;
     rc->data.u_native.fun_data = fun_data;
+    rc->data.u_native.const_table = const_table;
     rc->data.u_native.type_sig = type_sig;
 
 #ifdef DEBUG_PRINT
-    DEBUG_printf("assign native: kind=%d fun=%p len=" UINT_FMT " n_pos_args=" UINT_FMT " n_kwonly_args=" UINT_FMT " flags=%x\n", kind, fun_data, fun_len, n_pos_args, n_kwonly_args, (uint)scope_flags);
+    DEBUG_printf("assign native: kind=%d fun=%p len=" UINT_FMT " n_pos_args=" UINT_FMT " flags=%x\n", kind, fun_data, fun_len, n_pos_args, (uint)scope_flags);
     for (mp_uint_t i = 0; i < fun_len; i++) {
         if (i > 0 && i % 16 == 0) {
             DEBUG_printf("\n");
@@ -116,7 +113,7 @@ void mp_emit_glue_assign_native(mp_raw_code_t *rc, mp_raw_code_kind_t kind, void
 }
 #endif
 
-mp_obj_t mp_make_function_from_raw_code(mp_raw_code_t *rc, mp_obj_t def_args, mp_obj_t def_kw_args) {
+mp_obj_t mp_make_function_from_raw_code(const mp_raw_code_t *rc, mp_obj_t def_args, mp_obj_t def_kw_args) {
     DEBUG_OP_printf("make_function_from_raw_code %p\n", rc);
     assert(rc != NULL);
 
@@ -129,27 +126,24 @@ mp_obj_t mp_make_function_from_raw_code(mp_raw_code_t *rc, mp_obj_t def_args, mp
     // make the function, depending on the raw code kind
     mp_obj_t fun;
     switch (rc->kind) {
-        case MP_CODE_BYTECODE:
-        no_other_choice:
-            fun = mp_obj_new_fun_bc(rc->scope_flags, rc->n_pos_args, rc->n_kwonly_args, def_args, def_kw_args, rc->data.u_byte.code);
-            break;
         #if MICROPY_EMIT_NATIVE
         case MP_CODE_NATIVE_PY:
-            fun = mp_obj_new_fun_native(rc->scope_flags, rc->n_pos_args, rc->n_kwonly_args, def_args, def_kw_args, rc->data.u_native.fun_data);
+            fun = mp_obj_new_fun_native(def_args, def_kw_args, rc->data.u_native.fun_data, rc->data.u_native.const_table);
             break;
         case MP_CODE_NATIVE_VIPER:
             fun = mp_obj_new_fun_viper(rc->n_pos_args, rc->data.u_native.fun_data, rc->data.u_native.type_sig);
             break;
         #endif
-        #if MICROPY_EMIT_INLINE_THUMB
+        #if MICROPY_EMIT_INLINE_ASM
         case MP_CODE_NATIVE_ASM:
-            fun = mp_obj_new_fun_asm(rc->n_pos_args, rc->data.u_native.fun_data);
+            fun = mp_obj_new_fun_asm(rc->n_pos_args, rc->data.u_native.fun_data, rc->data.u_native.type_sig);
             break;
         #endif
         default:
-            // raw code was never set (this should not happen)
-            assert(0);
-            goto no_other_choice; // to help flow control analysis
+            // rc->kind should always be set and BYTECODE is the only remaining case
+            assert(rc->kind == MP_CODE_BYTECODE);
+            fun = mp_obj_new_fun_bc(def_args, def_kw_args, rc->data.u_byte.bytecode, rc->data.u_byte.const_table);
+            break;
     }
 
     // check for generator functions and if so wrap in generator object
@@ -160,7 +154,7 @@ mp_obj_t mp_make_function_from_raw_code(mp_raw_code_t *rc, mp_obj_t def_args, mp
     return fun;
 }
 
-mp_obj_t mp_make_closure_from_raw_code(mp_raw_code_t *rc, mp_uint_t n_closed_over, const mp_obj_t *args) {
+mp_obj_t mp_make_closure_from_raw_code(const mp_raw_code_t *rc, mp_uint_t n_closed_over, const mp_obj_t *args) {
     DEBUG_OP_printf("make_closure_from_raw_code %p " UINT_FMT " %p\n", rc, n_closed_over, args);
     // make function object
     mp_obj_t ffun;

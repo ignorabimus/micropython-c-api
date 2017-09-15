@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -30,10 +30,8 @@
 
 #include "py/mpstate.h"
 #include "py/repl.h"
-#include "readline.h"
-#ifdef MICROPY_HAL_H
-#include MICROPY_HAL_H
-#endif
+#include "py/mphal.h"
+#include "lib/mp-readline/readline.h"
 
 #if 0 // print debugging info
 #define DEBUG_PRINT (1)
@@ -134,9 +132,9 @@ int readline_process_char(int c) {
             goto right_arrow_key;
         } else if (c == CHAR_CTRL_K) {
             // CTRL-K is kill from cursor to end-of-line, inclusive
-	    vstr_cut_tail_bytes(rl.line, last_line_len - rl.cursor_pos);
-	    // set redraw parameters
-	    redraw_from_cursor = true;
+            vstr_cut_tail_bytes(rl.line, last_line_len - rl.cursor_pos);
+            // set redraw parameters
+            redraw_from_cursor = true;
         } else if (c == CHAR_CTRL_N) {
             // CTRL-N is go to next line in history
             goto down_arrow_key;
@@ -145,10 +143,10 @@ int readline_process_char(int c) {
             goto up_arrow_key;
         } else if (c == CHAR_CTRL_U) {
             // CTRL-U is kill from beginning-of-line up to cursor
-	    vstr_cut_out_bytes(rl.line, rl.orig_line_len, rl.cursor_pos - rl.orig_line_len);
-	    // set redraw parameters
-	    redraw_step_back = rl.cursor_pos - rl.orig_line_len;
-	    redraw_from_cursor = true;
+            vstr_cut_out_bytes(rl.line, rl.orig_line_len, rl.cursor_pos - rl.orig_line_len);
+            // set redraw parameters
+            redraw_step_back = rl.cursor_pos - rl.orig_line_len;
+            redraw_from_cursor = true;
         #endif
         } else if (c == '\r') {
             // newline
@@ -190,17 +188,17 @@ int readline_process_char(int c) {
         } else if (c == 9) {
             // tab magic
             const char *compl_str;
-            mp_uint_t compl_len = mp_repl_autocomplete(rl.line->buf + rl.orig_line_len, rl.cursor_pos - rl.orig_line_len, &mp_plat_print, &compl_str);
+            size_t compl_len = mp_repl_autocomplete(rl.line->buf + rl.orig_line_len, rl.cursor_pos - rl.orig_line_len, &mp_plat_print, &compl_str);
             if (compl_len == 0) {
                 // no match
-            } else if (compl_len == (mp_uint_t)(-1)) {
+            } else if (compl_len == (size_t)(-1)) {
                 // many matches
                 mp_hal_stdout_tx_str(rl.prompt);
                 mp_hal_stdout_tx_strn(rl.line->buf + rl.orig_line_len, rl.cursor_pos - rl.orig_line_len);
                 redraw_from_cursor = true;
             } else {
                 // one match
-                for (mp_uint_t i = 0; i < compl_len; ++i) {
+                for (size_t i = 0; i < compl_len; ++i) {
                     vstr_ins_byte(rl.line, rl.cursor_pos + i, *compl_str++);
                 }
                 // set redraw parameters
@@ -372,6 +370,18 @@ STATIC void readline_auto_indent(void) {
             }
         }
         // i=start of line; j=first non-space
+        if (i > 0 && j + 1 == line->len) {
+            // previous line is not first line and is all spaces
+            for (size_t k = i - 1; k > 0; --k) {
+                if (line->buf[k - 1] == '\n') {
+                    // don't auto-indent if last 2 lines are all spaces
+                    return;
+                } else if (line->buf[k - 1] != ' ') {
+                    // 2nd previous line is not all spaces
+                    break;
+                }
+            }
+        }
         int n = (j - i) / 4;
         if (line->buf[line->len - 2] == ':') {
             n += 1;
