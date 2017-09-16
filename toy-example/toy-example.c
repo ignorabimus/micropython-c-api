@@ -11,8 +11,7 @@
 #include "py/runtime.h"
 #include "py/gc.h"
 
-int execute_from_lexer(mp_lexer_t *lex, mp_parse_input_kind_t input_kind, bool is_repl);
-int handle_uncaught_exception(mp_obj_t exc);
+int handle_uncaught_exception(mp_obj_base_t *exc);
 int do_str(const char *str);
 
 mp_obj_t callback_print(mp_obj_t self_in, mp_uint_t n_args, mp_uint_t n_kw, const mp_obj_t *args)
@@ -37,7 +36,7 @@ mp_int_t call_add1(mp_int_t n)
 
 		nlr_pop();
 	} else {
-		handle_uncaught_exception((mp_obj_t)nlr.ret_val);
+		handle_uncaught_exception(nlr.ret_val);
 
 		return 0;
 	}
